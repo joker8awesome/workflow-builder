@@ -579,6 +579,96 @@ app.put('/api/sessions/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 1. 에이전트 자격증명/권한 API ===
+app.get('/api/credentials', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT agent_id, api_key, scopes FROM agent_credentials');
+    res.json({ success: true, credentials: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/credentials', requireAuth, async (req, res) => {
+  try {
+    const { agent_id, scopes } = req.body || {};
+    if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
+    const key = 'ag_' + require('crypto').randomBytes(12).toString('hex');
+    await pool.query(
+      `INSERT INTO agent_credentials (agent_id, api_key, scopes) VALUES ($1,$2,$3)
+       ON CONFLICT (agent_id) DO UPDATE SET api_key=EXCLUDED.api_key, scopes=EXCLUDED.scopes`,
+      [agent_id, key, JSON.stringify(scopes || ['execute', 'report'])]
+    );
+    res.json({ success: true, api_key: key });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 2. 감사 로그 API ===
+app.post('/api/audit', async (req, res) => {
+  try {
+    const { actor, agent_id, resource, action, detail } = req.body || {};
+    await pool.query(
+      `INSERT INTO audit_logs (actor, agent_id, resource, action, detail) VALUES ($1,$2,$3,$4,$5)`,
+      [actor || 'user', agent_id || '', resource || '', action || '', detail || '']
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/audit', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100');
+    res.json({ success: true, logs: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 3. 템플릿 마켓 API ===
+app.get('/api/templates', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT id, name, description, category, tags, installs, rating FROM wf_templates ORDER BY installs DESC');
+    res.json({ success: true, templates: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/templates', requireAuth, async (req, res) => {
+  try {
+    const { id, name, description, category, tags, data } = req.body || {};
+    if (!id || !name) return res.status(400).json({ success: false, error: 'id/name required' });
+    await pool.query(
+      `INSERT INTO wf_templates (id, name, description, category, tags, data)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, description=EXCLUDED.description,
+         category=EXCLUDED.category, tags=EXCLUDED.tags, data=EXCLUDED.data`,
+      [id, name, description || '', category || '', JSON.stringify(tags || []), JSON.stringify(data || {})]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/templates/:id/install', async (req, res) => {
+  try {
+    await pool.query('UPDATE wf_templates SET installs = installs + 1 WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query('SELECT data FROM wf_templates WHERE id = $1', [req.params.id]);
+    res.json({ success: true, data: rows[0] ? rows[0].data : null });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 4. LLM semantic cache API ===
+app.post('/api/cache/get', async (req, res) => {
+  try {
+    const { prompt, model } = req.body || {};
+    if (!prompt) return res.json({ success: true, hit: false });
+    const hash = require('crypto').createHash('sha256').update(prompt + (model || '')).digest('hex').slice(0, 16);
+    const { rows } = await pool.query(
+      'SELECT response FROM llm_cache WHERE prompt_hash = $1 ORDER BY id DESC LIMIT 1', [hash]);
+    res.json({ success: true, hit: rows.length > 0, response: rows[0] ? rows[0].response : null, hash });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/cache/put', async (req, res) => {
+  try {
+    const { prompt, model, response } = req.body || {};
+    const hash = require('crypto').createHash('sha256').update(prompt + (model || '')).digest('hex').slice(0, 16);
+    await pool.query(
+      `INSERT INTO llm_cache (prompt_hash, prompt, response, model) VALUES ($1,$2,$3,$4)
+       ON CONFLICT DO NOTHING`, [hash, prompt || '', response || '', model || '']);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [
@@ -692,6 +782,14 @@ ${WF_SCHEMA_EXAMPLE}`;
       e.id = e.id || 'e_' + i;
       e.label = e.label || '';
     });
+    // semantic cache 저장 (같은 프롬프트 재사용 시 비용 절감)
+    try {
+      await pool.query(
+        `INSERT INTO llm_cache (prompt_hash, prompt, response, model) VALUES ($1,$2,$3,$4)
+         ON CONFLICT DO NOTHING`,
+        [cacheHash, prompt, JSON.stringify(wf), routeModel]
+      );
+    } catch (e) {}
     res.json({ success: true, workflow: wf });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

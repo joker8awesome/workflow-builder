@@ -615,6 +615,7 @@
     <button id="btn-agents" class="tb-action">에이전트</button>
     <button id="btn-agent-dash" class="tb-action">대시보드</button>
     <button id="btn-sessions" class="tb-action">세션</button>
+    <button id="btn-market" class="tb-action">마켓</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -706,6 +707,15 @@
       </div>
     </div>
     <div id="session-body" style="font-size:12px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 템플릿 마켓 패널 -->
+  <div id="market-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:73;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">🛒 워크플로우 템플릿 마켓</h4>
+      <button id="market-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <button id="tpl-publish" class="tb-action" style="width:100%;margin-bottom:10px">+ 현재 워크플로우 템플릿 게시</button>
+    <div id="market-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -1184,7 +1194,7 @@ function renderInspector() {
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
       <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
-      ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea>' : ''}
+      ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea><label>모델 라우팅</label><select id="f-model" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px"><option value="">자동</option><option value="cheap"' + (n.model === 'cheap' ? ' selected' : '') + '>저비용</option><option value="smart"' + (n.model === 'smart' ? ' selected' : '') + '>고성능</option></select>' : ''}
       ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
@@ -1219,6 +1229,8 @@ function renderInspector() {
     });
     const fLlm = document.getElementById('f-llm');
     if (fLlm) fLlm.addEventListener('input', (e) => { n.llm_prompt = e.target.value; saveStore(); });
+    const fModel = document.getElementById('f-model');
+    if (fModel) fModel.addEventListener('change', (e) => { n.model = e.target.value; saveStore(); });
     const fCond2 = document.getElementById('f-cond2');
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
@@ -2201,7 +2213,7 @@ async function executeWorkflow() {
         const yesEdge = outs.find(e => e.label === 'Yes');
         const noEdge = outs.find(e => e.label === 'No');
         const decision = await llmDecide(resolveRefs(n.llm_prompt, ctx), ctx);
-        document.getElementById('rs-status').textContent = 'LLM 판단: ' + (decision ? 'Yes' : 'No');
+        document.getElementById('rs-status').textContent = 'LLM 판단: ' + (decision ? 'Yes' : 'No') + (n.model ? ' [' + n.model + ']' : '');
         nextEdge = decision ? (yesEdge || outs[0]) : (noEdge || outs[0]);
       } else if (n.condition) {
         const yesEdge = outs.find(e => e.label === 'Yes');
@@ -2773,15 +2785,33 @@ function initShareDemo() {
 // ═══ 5차 고도화 모듈 (딥리서치 반영) ═══
 
 // 1. LLM 판단 노드 — decision + llm_prompt
-async function llmDecide(prompt, ctx) {
+async function llmDecide(prompt, ctx, model) {
   if (!serverOnline) return null;
   try {
+    // 5: semantic cache 확인 (같은 판단 재사용)
+    const cacheKey = 'DECIDE:' + prompt + ':' + (model || '');
+    const ch = await fetch(API_BASE + '/api/cache/get', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: cacheKey, model: model || '' }),
+    }).catch(() => null);
+    if (ch && ch.ok) {
+      const cj = await ch.json();
+      if (cj.hit) return cj.response === 'true';
+    }
     const r = await fetch(API_BASE + '/api/ai/decide', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, context: ctx }),
+      body: JSON.stringify({ prompt, context: ctx, model }),
     });
     const j = await r.json();
-    return j.success ? j.decision : null;
+    if (j.success) {
+      // 5: 캐시 저장
+      fetch(API_BASE + '/api/cache/put', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: cacheKey, model: model || '', response: String(!!j.decision) }),
+      }).catch(() => {});
+      return !!j.decision;
+    }
+    return null;
   } catch (e) { return null; }
 }
 
@@ -3380,6 +3410,76 @@ async function runAgentSessions() {
   } catch (e) { toast('실행 오류: ' + e.message); }
 }
 
+// ═══ 템플릿 마켓 + 감사 모듈 ═══
+async function loadTemplates() {
+  try {
+    const r = await fetch(API_BASE + '/api/templates');
+    const j = await r.json();
+    return j.success ? (j.templates || []) : [];
+  } catch (e) { return []; }
+}
+async function renderMarket() {
+  const body = document.getElementById('market-body');
+  const tpls = await loadTemplates();
+  body.innerHTML = tpls.length === 0
+    ? '<span style="color:var(--panel-text-faint)">게시된 템플릿 없음 — 현재 워크플로우를 게시해보세요</span>'
+    : tpls.map(t => '<div style="padding:10px;margin-bottom:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:10px">' +
+      '<div style="display:flex;justify-content:space-between"><strong>' + escapeHtml(t.name) + '</strong>' +
+      '<span style="color:var(--panel-text-faint);font-size:10px">' + escapeHtml(t.category || '') + '</span></div>' +
+      '<div style="font-size:11px;color:var(--panel-text-dim);margin:4px 0">' + escapeHtml(t.description || '') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+      '<span style="font-size:10px;color:var(--panel-text-faint)">⬇ ' + (t.installs || 0) + ' · ★ ' + (t.rating || 0) + '</span>' +
+      '<button class="tb-action tpl-install" data-id="' + escapeHtml(t.id) + '" style="padding:3px 10px;font-size:11px">설치</button></div></div>').join('');
+  body.querySelectorAll('.tpl-install').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      try {
+        const r = await fetch(API_BASE + '/api/templates/' + id + '/install', { method: 'POST' });
+        const j = await r.json();
+        if (j.success && j.data) {
+          store.workflows.push({ id: 'wf_' + Date.now().toString(36), name: '템플릿: ' + (j.data.name || id), nodes: j.data.nodes || [], edges: j.data.edges || [] });
+          store.activeWorkflowId = store.workflows[store.workflows.length - 1].id;
+          saveStore(); renderAll(); toast('템플릿 설치 완료');
+          renderMarket();
+        }
+      } catch (e) { toast('설치 실패'); }
+    });
+  });
+}
+async function publishTemplate() {
+  const wf = currentWorkflow();
+  if (!wf) { toast('워크플로우 없음'); return; }
+  toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">템플릿 게시</strong>' +
+    '<input id="tpl-name" placeholder="템플릿 이름" value="' + escapeHtml(wf.name) + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="tpl-desc" placeholder="설명" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="tpl-cat" placeholder="카테고리 (예: 데이터)" style="width:100%;padding:8px;margin-bottom:10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<button id="tpl-save" class="tb-action" style="width:100%">게시</button></div>', 60000);
+  document.querySelector('#tpl-save').addEventListener('click', async () => {
+    const id = 'tpl_' + Date.now().toString(36);
+    await fetch(API_BASE + '/api/templates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id, name: document.querySelector('#tpl-name').value.trim() || wf.name,
+        description: document.querySelector('#tpl-desc').value.trim(),
+        category: document.querySelector('#tpl-cat').value.trim(),
+        tags: [], data: { name: wf.name, nodes: wf.nodes, edges: wf.edges },
+      }),
+    }).catch(() => {});
+    document.querySelectorAll('.toast').forEach(t => t.remove());
+    toast('템플릿 게시됨');
+    renderMarket();
+  });
+}
+// 감사 로그 조회 (실행 시 기록은 서버에서)
+async function logAudit(resource, action, detail) {
+  try {
+    await fetch(API_BASE + '/api/audit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actor: 'me', agent_id: '', resource, action, detail }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3423,6 +3523,14 @@ document.getElementById('session-refresh').addEventListener('click', renderSessi
 document.getElementById('session-close').addEventListener('click', () => {
   document.getElementById('session-panel').style.display = 'none';
 });
+document.getElementById('btn-market').addEventListener('click', () => {
+  document.getElementById('market-panel').style.display = 'block';
+  renderMarket();
+});
+document.getElementById('market-close').addEventListener('click', () => {
+  document.getElementById('market-panel').style.display = 'none';
+});
+document.getElementById('tpl-publish').addEventListener('click', publishTemplate);
 loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;

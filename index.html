@@ -98,7 +98,7 @@
     border-block-end:1px solid var(--panel-border);
     display:flex;align-items:center;
     padding-inline:10px;
-    gap:5px;flex-shrink:0;
+    gap:4px;flex-shrink:0;
     position:relative;z-index:20;
     backdrop-filter:blur(12px);
     background:color-mix(in srgb, var(--panel-bg) 88%, transparent);
@@ -269,6 +269,7 @@
 }
 
 @layer utilities {
+  #topbar .tb-action{flex-shrink:0}
   #topbar button{
     padding:5px 11px;
     background:transparent;
@@ -618,34 +619,27 @@
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
     <span id="sync-status" style="font-size:12px;color:#888"></span>
-    <input id="wf-search" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:160px">
-    <button id="btn-ai" class="tb-action">✨ AI 생성</button>
-    <button id="btn-group" class="tb-action">그룹</button>
-    <button id="btn-run" class="tb-action">▶ 실행</button>
-    <button id="btn-align" class="tb-action">정렬</button>
-    <button id="btn-template" class="tb-action">템플릿</button>
+    <input id="wf-search" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:150px">
+    <button id="btn-run" class="tb-action" style="background:var(--accent);color:#04100a;font-weight:700">▶ 실행</button>
+    <button id="btn-ai" class="tb-action">✨ AI</button>
+    <button id="btn-agents" class="tb-action">팀</button>
     <button id="btn-share" class="tb-action">공유</button>
-    <button id="btn-version" class="tb-action">버전</button>
-    <button id="btn-png" class="tb-action">PNG</button>
-    <button id="btn-md" class="tb-action">MD</button>
-    <button id="btn-stats" class="tb-action">통계</button>
-    <button id="btn-lock" class="tb-action">🔒</button>
-    <button id="btn-fav" class="tb-action">☆</button>
     <button id="btn-export" class="tb-action">내보내기</button>
-    <button id="btn-import" class="tb-action">가져오기</button>
-    <button id="btn-bundle" class="tb-action">번들</button>
-    <button id="btn-trace" class="tb-action">트레이스</button>
-    <button id="btn-diff" class="tb-action">diff</button>
-    <button id="btn-risk" class="tb-action">위험</button>
+    <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
-    <button id="btn-agents" class="tb-action">에이전트</button>
-    <button id="btn-agent-dash" class="tb-action">대시보드</button>
-    <button id="btn-sessions" class="tb-action">세션</button>
-    <button id="btn-market" class="tb-action">마켓</button>
-    <button id="btn-feed" class="tb-action">활동</button>
-    <button id="btn-test" class="tb-action">테스트</button>
-    <button id="btn-sim" class="tb-action">시뮬레이션</button>
-    <button id="btn-gov" class="tb-action">거버넌스</button>
+    <div style="position:relative" id="more-wrap">
+      <button id="btn-more" class="tb-action">⋯ 더보기</button>
+      <div id="more-menu" style="display:none;position:absolute;top:40px;right:0;z-index:90;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:8px;min-width:190px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.4)"></div>
+    </div>
+    <!-- 숨김 원본 버튼 — 더보기 메뉴에서 click() 트리거용 (이벤트 바인딩 유지) -->
+    <div id="hidden-btns" style="display:none">
+      <button id="btn-group"></button><button id="btn-template"></button><button id="btn-version"></button>
+      <button id="btn-png"></button><button id="btn-md"></button><button id="btn-lock"></button><button id="btn-fav"></button>
+      <button id="btn-import"></button><button id="btn-bundle"></button><button id="btn-trace"></button>
+      <button id="btn-diff"></button><button id="btn-risk"></button><button id="btn-agent-dash"></button>
+      <button id="btn-sessions"></button><button id="btn-market"></button><button id="btn-feed"></button>
+      <button id="btn-test"></button><button id="btn-sim"></button><button id="btn-gov"></button><button id="btn-align"></button>
+    </div>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -1037,6 +1031,7 @@ function renderSidebar() {
   }, 100);
   store.workflows.forEach(wf => {
     const li = document.createElement('li');
+    li.title = wf.name + (wf.nodes ? ' (' + wf.nodes.length + ' 노드)' : '');
     const nameSpan = document.createElement('span');
     nameSpan.className = 'wf-name';
     nameSpan.textContent = wf.name;
@@ -1476,7 +1471,7 @@ function renderInspector() {
         <button id="f-sched-parse" class="tb-action" style="padding:4px 10px;font-size:11px">변환</button>
       </div>
       <label>크론</label><input id="f-sched" value="${escapeHtml(wf.schedule || '')}" placeholder="예: 0 9 * * *">
-      <button id="f-sched-save" class="tb-action" style="width:100%;margin-top:4px;font-size:11px">💾 스케줄 저장</button>`;
+      <button id="f-sched-save" class="tb-action" style="width:100%;margin-top:4px;font-size:11px;box-sizing:border-box">💾 스케줄 저장</button>`;
     const schedNl = document.getElementById('f-sched-nl');
     const schedParse = document.getElementById('f-sched-parse');
     const schedInput = document.getElementById('f-sched');
@@ -4080,19 +4075,28 @@ function onboardingTour() {
   try {
     if (localStorage.getItem(LS_KEY + '_onboarded')) return;
     setTimeout(() => {
-      toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:8px;color:var(--accent)">👋 시작하기</strong>' +
-        '<div style="font-size:12px;color:var(--panel-text-dim);margin-bottom:8px">' +
+      let ob = document.getElementById('onboard-card');
+      if (!ob) {
+        ob = document.createElement('div');
+        ob.id = 'onboard-card';
+        ob.style.cssText = 'position:fixed;top:64px;right:16px;z-index:110;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:300px;box-shadow:0 10px 32px rgba(0,0,0,.4)';
+        document.body.appendChild(ob);
+      }
+      ob.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+        '<strong style="color:var(--accent);font-size:14px">👋 시작하기</strong>' +
+        '<button id="onboard-x" class="tb-action" style="padding:2px 8px;font-size:11px">✕</button></div>' +
+        '<div style="font-size:12px;color:var(--panel-text-dim);line-height:1.7">' +
         '1. <strong>우클릭</strong>으로 노드 추가<br>' +
-        '2. 노드 <strong>가장자리 핸들</strong> 드래그로 연결<br>' +
+        '2. 노드 <strong>가장자리</strong> 드래그로 연결<br>' +
         '3. <strong>Ctrl+K</strong> 명령 팔레트<br>' +
-        '4. [에이전트] 탭에서 팀 등록<br>' +
+        '4. [팀] 탭에서 에이전트 등록<br>' +
         '5. [▶ 실행]으로 워크플로우 실행</div>' +
-        '<button id="onboard-done" class="tb-action" style="width:100%">시작하기</button></div>', 15000);
+        '<button id="onboard-done" class="tb-action" style="width:100%;margin-top:10px">시작하기</button>';
       const obDone = document.getElementById('onboard-done');
-      if (obDone) obDone.addEventListener('click', () => {
-        localStorage.setItem(LS_KEY + '_onboarded', '1');
-        document.querySelectorAll('.toast').forEach(t => t.remove());
-      });
+      const obX = document.getElementById('onboard-x');
+      const close = () => { localStorage.setItem(LS_KEY + '_onboarded', '1'); if (ob) ob.remove(); };
+      if (obDone) obDone.addEventListener('click', close);
+      if (obX) obX.addEventListener('click', close);
     }, 1500);
   } catch (e) {}
 }
@@ -4196,6 +4200,47 @@ function trackAction(action) {
     localStorage.setItem(key, JSON.stringify(a));
   } catch (e) {}
 }
+
+// 1: 더보기 드롭다운 메뉴 — 상단바 오버플로 해결
+const MORE_ITEMS = [
+  ['그룹', 'btn-group'], ['템플릿', 'btn-template'], ['버전', 'btn-version'],
+  ['PNG', 'btn-png'], ['MD', 'btn-md'], ['🔒 잠금', 'btn-lock'], ['☆ 즐겨찾기', 'btn-fav'],
+  ['가져오기', 'btn-import'], ['번들', 'btn-bundle'], ['트레이스', 'btn-trace'],
+  ['diff', 'btn-diff'], ['위험', 'btn-risk'], ['대시보드', 'btn-agent-dash'],
+  ['세션', 'btn-sessions'], ['마켓', 'btn-market'], ['활동', 'btn-feed'],
+  ['테스트', 'btn-test'], ['시뮬레이션', 'btn-sim'], ['거버넌스', 'btn-gov'],
+  ['정렬', 'btn-align'],
+];
+function buildMoreMenu() {
+  const menu = document.getElementById('more-menu');
+  if (!menu) return;
+  menu.innerHTML = MORE_ITEMS.map(([label, id]) => {
+    const btn = document.getElementById(id);
+    if (!btn) return '';
+    // 원본 버튼의 클릭 이벤트 복제 — 더보기 메뉴 항목 생성
+    return '<button class="mm-item" data-target="' + id + '" style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:var(--panel-text);font-size:13px;cursor:pointer">' + label + '</button>';
+  }).join('');
+  // 메뉴 항목 클릭 → 원본 버튼 트리거
+  menu.querySelectorAll('.mm-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.click();
+      menu.style.display = 'none';
+    });
+  });
+}
+const btnMore = document.getElementById('btn-more');
+if (btnMore) btnMore.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('more-menu');
+  buildMoreMenu();
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('more-menu');
+  const wrap = document.getElementById('more-wrap');
+  if (menu && wrap && !wrap.contains(e.target)) menu.style.display = 'none';
+});
 
 // === 초기화 ===
 loadStore();

@@ -97,15 +97,18 @@
     background:var(--panel-bg);
     border-block-end:1px solid var(--panel-border);
     display:flex;align-items:center;
-    padding-inline:var(--space-4);
-    gap:var(--space-3);flex-shrink:0;
+    padding-inline:10px;
+    gap:5px;flex-shrink:0;
     position:relative;z-index:20;
     backdrop-filter:blur(12px);
     background:color-mix(in srgb, var(--panel-bg) 88%, transparent);
+    overflow-x:auto;overflow-y:hidden;
   }
+  #topbar::-webkit-scrollbar{height:3px}
+  #topbar .spacer{flex:1}
   #app{flex:1;display:flex;min-height:0}
   #sidebar{
-    width:var(--sidebar-w);
+    width:280px;
     background:var(--panel-bg-2);
     border-inline-end:1px solid var(--panel-border);
     flex-shrink:0;display:flex;flex-direction:column;
@@ -126,6 +129,7 @@
     border-inline-start:1px solid var(--panel-border);
     flex-shrink:0;overflow-y:auto;
   }
+  #inspector-body{min-height:200px}
 }
 
 @layer components {
@@ -133,12 +137,14 @@
   #wf-list{list-style:none;padding:var(--space-2);overflow-y:auto;flex:1}
   #wf-list li{
     display:flex;justify-content:space-between;align-items:center;
-    padding:var(--space-2) var(--space-3);
-    border-radius:var(--radius-sm);
-    cursor:pointer;font-size:14px;margin-block-end:var(--space-1);
+    padding:9px 12px;
+    border-radius:8px;
+    cursor:pointer;font-size:13px;margin-block-end:4px;
     color:var(--panel-text-dim);
     transition:background .15s ease, color .15s ease;
+    min-height:36px;
   }
+  #wf-list li .wf-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   #wf-list li:hover{background:var(--dark-3);color:var(--panel-text)}
   #wf-list li.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
   #wf-list .wf-del{border:none;background:none;font-size:16px;color:var(--panel-text-faint);cursor:pointer;padding-inline:var(--space-1)}
@@ -217,7 +223,7 @@
 
   /* 엣지 — 다크 캔버스에서 가시성 개선 */
   #edges{position:absolute;inset:0;pointer-events:none;z-index:0}
-  #edges line{pointer-events:stroke;stroke:#7d8fa1 !important;stroke-width:2.5}
+  #edges line{pointer-events:stroke;stroke:#8fa3b5 !important;stroke-width:3}
   #edges text{fill:var(--accent) !important}
 
   /* 인스펙터 */
@@ -262,13 +268,14 @@
 
 @layer utilities {
   #topbar button{
-    padding:7px 14px;
+    padding:5px 11px;
     background:transparent;
     border:1px solid var(--dark-border);
-    border-radius:var(--radius-sm);
+    border-radius:8px;
     color:var(--panel-text);
-    cursor:pointer;font-size:13px;
-    transition:border-color .15s, background .15s, color .15s, translate .15s;
+    cursor:pointer;font-size:12px;font-weight:500;
+    white-space:nowrap;height:30px;line-height:1;
+    transition:border-color .15s, background .15s, color .15s, translate .15s, transform .1s;
   }
   #topbar button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
   /* 우상단 내보내기/가져오기 — #00ff87 강조 버튼 */
@@ -526,7 +533,10 @@
   #stats-body{line-height:1.7}
 
   /* 실행 상태 바 */
-  #run-status-bar{cursor:pointer}
+  #run-status-bar{
+    cursor:pointer;left:16px;transform:none;bottom:16px;
+    display:none;position:fixed;
+  }
   #run-status-bar span{white-space:nowrap}
   #rs-status{color:var(--accent);font-weight:700}
   #rs-time{color:var(--panel-text-faint)}
@@ -898,7 +908,10 @@ function renderSidebar() {
   ul.innerHTML = '';
   store.workflows.forEach(wf => {
     const li = document.createElement('li');
-    li.textContent = wf.name;
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'wf-name';
+    nameSpan.textContent = wf.name;
+    li.appendChild(nameSpan);
     li.className = wf.id === store.activeWorkflowId ? 'active' : '';
     li.dataset.id = wf.id;
     li.addEventListener('click', () => {

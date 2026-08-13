@@ -2,6 +2,8 @@
 // 실행: node server.js  (기본 포트 3737)
 const express = require('express');
 const { Pool } = require('pg');
+const http = require('http');
+const { WebSocketServer } = require('ws');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -144,6 +146,79 @@ app.get('/wf/:id', async (req, res) => {
 // 정적 파일 (index.html 서빙)
 app.use(express.static(__dirname));
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+
+// === 실시간 협업 (WebSocket) ===
+const wss = new WebSocketServer({ server, path: '/ws' });
+const wsClients = new Set();
+wss.on('connection', (ws) => {
+  wsClients.add(ws);
+  ws.on('message', (raw) => {
+    // 모든 클라이언트에게 브로드캐스트 (간단한 협업)
+    wsClients.forEach(c => {
+      if (c !== ws && c.readyState === 1) c.send(raw.toString());
+    });
+  });
+  ws.on('close', () => wsClients.delete(ws));
+});
+function broadcastWf(id, data) {
+  const msg = JSON.stringify({ type: 'wf_update', id, data });
+  wsClients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+}
+
+// === 서버 버전 히스토리 ===
+app.post('/api/workflows/:id/versions', async (req, res) => {
+  try {
+    const { name, data } = req.body || {};
+    await pool.query(
+      `INSERT INTO wf_versions (wf_id, name, data, created_at)
+       VALUES ($1, $2, $3, now())`,
+      [req.params.id, name || '', JSON.stringify(data || {})]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.get('/api/workflows/:id/versions', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, created_at FROM wf_versions WHERE wf_id = $1 ORDER BY created_at DESC LIMIT 30',
+      [req.params.id]
+    );
+    res.json({ success: true, versions: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.get('/api/workflows/:id/versions/:vid', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, wf_id, name, data FROM wf_versions WHERE id = $1 AND wf_id = $2',
+      [req.params.vid, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ success: false, error: 'not found' });
+    res.json({ success: true, version: rows[0] });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === 실행 로그 ===
+app.post('/api/workflows/:id/logs', async (req, res) => {
+  try {
+    const { path, ts } = req.body || {};
+    await pool.query(
+      `INSERT INTO wf_runlogs (wf_id, run_path, run_at) VALUES ($1, $2, $3)`,
+      [req.params.id, path || '', ts || new Date().toISOString()]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.get('/api/workflows/:id/logs', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT run_path, run_at FROM wf_runlogs WHERE wf_id = $1 ORDER BY run_at DESC LIMIT 20',
+      [req.params.id]
+    );
+    res.json({ success: true, logs: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+server.listen(PORT, () => {
   console.log(`워크플로우 빌더 서버: http://localhost:${PORT}`);
 });

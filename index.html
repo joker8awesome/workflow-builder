@@ -38,7 +38,72 @@
     </aside>
   </div>
 <script>
-// Task 2~7에서 구현
+const LS_KEY = 'wf_app_data';
+let store = { workflows: [], activeWorkflowId: null };
+let saveTimer = null;
+
+function defaultWorkflow(name) {
+  const id = 'wf_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  return {
+    id, name,
+    nodes: [
+      { id: 'n_' + Date.now().toString(36) + 'a', type: 'start', x: 80, y: 100, label: '시작', desc: '', assignee: '', due: '', tags: [] },
+      { id: 'n_' + Date.now().toString(36) + 'b', type: 'end', x: 80, y: 340, label: '종료', desc: '', assignee: '', due: '', tags: [] }
+    ],
+    edges: []
+  };
+}
+
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      store = JSON.parse(raw);
+      if (!Array.isArray(store.workflows)) store.workflows = [];
+      if (store.workflows.length === 0) {
+        const wf = defaultWorkflow('새 워크플로우');
+        store.workflows.push(wf);
+        store.activeWorkflowId = wf.id;
+      }
+      if (!store.workflows.find(w => w.id === store.activeWorkflowId)) {
+        store.activeWorkflowId = store.workflows[0].id;
+      }
+    } else {
+      const wf = defaultWorkflow('새 워크플로우');
+      store.workflows = [wf];
+      store.activeWorkflowId = wf.id;
+    }
+  } catch (e) {
+    console.warn('load failed', e);
+    const wf = defaultWorkflow('새 워크플로우');
+    store = { workflows: [wf], activeWorkflowId: wf.id };
+  }
+}
+
+function saveStore(immediate) {
+  clearTimeout(saveTimer);
+  const write = () => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(store));
+      const el = document.getElementById('save-status');
+      if (el) { el.textContent = '저장됨'; setTimeout(() => el.textContent = '', 2000); }
+    } catch (e) {
+      const el = document.getElementById('save-status');
+      if (el) el.textContent = '⚠ 저장 실패 (localStorage 불가)';
+    }
+  };
+  if (immediate) write();
+  else saveTimer = setTimeout(write, 500);
+}
+
+function currentWorkflow() {
+  return store.workflows.find(w => w.id === store.activeWorkflowId) || null;
+}
+
+// 초기화
+loadStore();
+const wf0 = currentWorkflow();
+if (wf0) document.getElementById('wf-name').value = wf0.name;
 </script>
 </body>
 </html>

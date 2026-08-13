@@ -1993,11 +1993,15 @@ function renderRunLog() {
 // ── 3.3 노드별 조건식 ──
 function evalCondition(expr, ctx) {
   try {
-    // 안전한 조건 평가 — 단순 연산자/변수만 허용
-    const sanitized = String(expr || '').replace(/[^0-9a-zA-Z_\s.()+\-*\/<>!=&|'"]/g, '');
+    // 안전한 조건 평가 — 단순 연산자/변수만 허용 + 프로토타입 차단
+    let sanitized = String(expr || '').replace(/[^0-9a-zA-Z_\s.()+\-*\/<>!=&|'"]/g, '');
+    // 프로토타입 체인 접근 차단 (constructor/prototype/__proto__)
+    if (/constructor|prototype|__proto__|caller|arguments/i.test(sanitized)) return false;
     if (!sanitized.trim()) return false;
-    const fn = new Function('ctx', 'with(ctx) { return !!(' + sanitized + '); }');
-    return fn(ctx);
+    try {
+      const fn = new Function('ctx', 'with(ctx) { return !!(' + sanitized + '); }');
+      return fn(ctx);
+    } catch (e) { return false; }
   } catch (e) { return false; }
 }
 
@@ -3278,6 +3282,14 @@ function showKnowledgeForm() {
     document.querySelectorAll('.toast').forEach(t => t.remove());
   });
 }
+
+// 전역 promise rejection 안전망 — fetch 오류로 인한 중단 방지
+window.addEventListener('unhandledrejection', (e) => {
+  console.warn('Unhandled rejection:', e.reason);
+  // 조용히 처리 — UI 중단 없음 (토스트 최소화)
+  const st = document.getElementById('sync-status');
+  if (st) st.textContent = serverOnline ? '서버 연결됨' : '로컬 저장';
+});
 
 // === 초기화 ===
 loadStore();

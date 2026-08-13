@@ -375,7 +375,34 @@ document.getElementById('canvas').addEventListener('click', () => {
   renderAll();
 });
 
-// 초기화
+// === 키보드 삭제 ===
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected.id) {
+    e.preventDefault();
+    const wf = currentWorkflow();
+    if (selected.type === 'node') {
+      wf.nodes = wf.nodes.filter(n => n.id !== selected.id);
+      wf.edges = wf.edges.filter(x => x.from !== selected.id && x.to !== selected.id);
+    } else if (selected.type === 'edge') {
+      wf.edges = wf.edges.filter(x => x.id !== selected.id);
+    }
+    selected = { type: null, id: null };
+    saveStore(true); renderAll();
+  }
+});
+
+// === 모바일 토글 ===
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.toggle('open');
+});
+
+// === 상단 워크플로우명 연동 ===
+document.getElementById('wf-name').addEventListener('input', (e) => {
+  const wf = currentWorkflow();
+  if (wf) { wf.name = e.target.value; renderSidebar(); saveStore(); }
+});
+
+// === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
 if (wf0) document.getElementById('wf-name').value = wf0.name;

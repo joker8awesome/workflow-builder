@@ -513,6 +513,46 @@ app.get('/api/agent-metrics', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 에이전트 세션/메시지 API ===
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const { wf } = req.query || {};
+    const { rows } = wf
+      ? await pool.query('SELECT * FROM agent_sessions WHERE wf_id = $1 ORDER BY created_at DESC', [wf])
+      : await pool.query('SELECT * FROM agent_sessions ORDER BY created_at DESC LIMIT 50');
+    res.json({ success: true, sessions: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/messages', async (req, res) => {
+  try {
+    const { session } = req.query || {};
+    const { rows } = session
+      ? await pool.query('SELECT * FROM agent_messages WHERE session_id = $1 ORDER BY id DESC LIMIT 100', [session])
+      : await pool.query('SELECT * FROM agent_messages ORDER BY id DESC LIMIT 100');
+    res.json({ success: true, messages: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/messages', async (req, res) => {
+  try {
+    const { msg_type, from_agent, to_agent, session_id, payload } = req.body || {};
+    if (!from_agent || !to_agent) return res.status(400).json({ success: false, error: 'from/to required' });
+    const { rows } = await pool.query(
+      `INSERT INTO agent_messages (msg_type, from_agent, to_agent, session_id, payload, status)
+       VALUES ($1,$2,$3,$4,$5,'sent') RETURNING id`,
+      [msg_type || 'command', from_agent, to_agent, session_id || '', JSON.stringify(payload || {})]
+    );
+    res.json({ success: true, id: rows[0].id });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+// 세션 상태 갱신
+app.put('/api/sessions/:id', async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    await pool.query('UPDATE agent_sessions SET status = $1, updated_at = now() WHERE id = $2', [status || 'idle', req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

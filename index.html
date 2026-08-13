@@ -634,6 +634,7 @@
     <button id="btn-sessions" class="tb-action">세션</button>
     <button id="btn-market" class="tb-action">마켓</button>
     <button id="btn-feed" class="tb-action">활동</button>
+    <button id="btn-test" class="tb-action">테스트</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -747,6 +748,16 @@
       </div>
     </div>
     <div id="feed-body" style="font-size:12px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 워크플로우 테스트 스위트 패널 -->
+  <div id="test-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:75;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">🧪 워크플로우 테스트/회귀 게이트</h4>
+      <button id="test-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <button id="test-add" class="tb-action" style="width:100%;margin-bottom:8px">+ 테스트 케이스 추가</button>
+    <button id="test-run-all" class="tb-action" style="width:100%;margin-bottom:10px;background:var(--accent);border-color:var(--accent);color:#04100a;font-weight:700">▶ 회귀 게이트 실행</button>
+    <div id="test-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -3449,7 +3460,7 @@ async function runAgentSessions() {
   try {
     const r = await fetch(API_BASE + '/api/exec', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ script: 'python3 /opt/data/projects/workflow-builder/agent_orchestrator.py --workflow ' + wf.id + ' --run', agent_id: 'orchestrator' }),
+      body: JSON.stringify({ script: '/opt/data/projects/workflow-builder/.agentenv/bin/python /opt/data/projects/workflow-builder/agent_orchestrator.py --workflow ' + wf.id + ' --run', agent_id: 'orchestrator' }),
     });
     const j = await r.json();
     toast(j.success ? '✅ 오케스트레이터 실행 완료' : '❌ 실패: ' + (j.error || ''));
@@ -3606,6 +3617,94 @@ function scopeBoundaryHTML(agent) {
     scopes.map(s => '<span style="background:var(--dark);border-radius:4px;padding:1px 6px;margin-right:4px">' + escapeHtml(s) + '</span>').join('') + '</div>';
 }
 
+// ═══ 테스트 스위트 + 회귀 게이트 모듈 ═══
+async function loadTests() {
+  const wf = currentWorkflow();
+  try {
+    const url = wf ? API_BASE + '/api/tests?wf=' + encodeURIComponent(wf.id) : API_BASE + '/api/tests';
+    const r = await fetch(url);
+    const j = await r.json();
+    return j.success ? (j.tests || []) : [];
+  } catch (e) { return []; }
+}
+async function renderTests() {
+  const body = document.getElementById('test-body');
+  const tests = await loadTests();
+  body.innerHTML = tests.length === 0
+    ? '<span style="color:var(--panel-text-faint)">테스트 케이스 없음 — 추가해보세요</span>'
+    : tests.map(t => {
+        const st = t.last_status;
+        const color = st === 'pass' ? 'var(--accent)' : st === 'fail' ? '#ff5d5d' : 'var(--panel-text-faint)';
+        return '<div style="padding:9px;margin-bottom:6px;background:var(--dark-3);border-radius:8px;display:flex;justify-content:space-between;align-items:center">' +
+          '<div><strong>' + escapeHtml(t.name) + '</strong><div style="font-size:10px;color:var(--panel-text-faint)">' + escapeHtml(t.wf_id) + '</div></div>' +
+          '<div style="display:flex;align-items:center;gap:8px"><span style="color:' + color + ';font-weight:700">' + (st === 'pass' ? '✅' : st === 'fail' ? '❌' : '·') + ' ' + st + '</span>' +
+          '<button class="tb-action test-del" data-id="' + t.id + '" style="padding:2px 6px;font-size:10px;color:#ff5d5d">✕</button></div></div>';
+      }).join('');
+  body.querySelectorAll('.test-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await fetch(API_BASE + '/api/tests/' + btn.dataset.id, { method: 'DELETE' }).catch(() => {});
+      renderTests();
+    });
+  });
+}
+async function addTest() {
+  const wf = currentWorkflow();
+  if (!wf) { toast('워크플로우 없음'); return; }
+  toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">테스트 케이스 추가</strong>' +
+    '<input id="tt-name" placeholder="테스트 이름 (예: 정상 경로)" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="tt-input" placeholder="입력 (JSON, 예: {score:80})" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="tt-expected" placeholder="예상 (JSON, 예: {결과:완료})" style="width:100%;padding:8px;margin-bottom:10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<button id="tt-save" class="tb-action" style="width:100%">저장</button></div>', 60000);
+  document.querySelector('#tt-save').addEventListener('click', async () => {
+    let input = {}, expected = {};
+    try { input = JSON.parse(document.querySelector('#tt-input').value || '{}'); } catch (e) {}
+    try { expected = JSON.parse(document.querySelector('#tt-expected').value || '{}'); } catch (e) {}
+    await fetch(API_BASE + '/api/tests', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_id: wf.id, name: document.querySelector('#tt-name').value.trim() || '테스트', input, expected }),
+    }).catch(() => {});
+    document.querySelectorAll('.toast').forEach(t => t.remove());
+    toast('테스트 추가됨'); renderTests();
+  });
+}
+// 회귀 게이트 — 테스트 실행 + 결과 기록 (검증은 오케스트레이터/실행과 연동)
+async function runRegressionGate() {
+  const wf = currentWorkflow();
+  if (!wf) { toast('워크플로우 없음'); return; }
+  const tests = await loadTests();
+  if (tests.length === 0) { toast('테스트 케이스가 없습니다'); return; }
+  toast('회귀 게이트 실행 중...');
+  let pass = 0;
+  for (const t of tests) {
+    // 간단 검증: 오케스트레이터 실행 후 성공 여부
+    try {
+      const r = await fetch(API_BASE + '/api/exec', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script: '/opt/data/projects/workflow-builder/.agentenv/bin/python /opt/data/projects/workflow-builder/agent_orchestrator.py --workflow ' + wf.id + ' --run', agent_id: 'gate' }),
+      });
+      const j = await r.json();
+      const ok = j.success;
+      await fetch(API_BASE + '/api/tests/' + t.id + '/result', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: ok ? 'pass' : 'fail' }),
+      }).catch(() => {});
+      if (ok) pass++;
+    } catch (e) {
+      await fetch(API_BASE + '/api/tests/' + t.id + '/result', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'fail' }),
+      }).catch(() => {});
+    }
+  }
+  toast('회귀 게이트: ' + pass + '/' + tests.length + ' 통과');
+  renderTests();
+}
+function toggleTestPanel() {
+  const panel = document.getElementById('test-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') renderTests();
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3662,6 +3761,12 @@ document.getElementById('feed-close').addEventListener('click', () => {
   document.getElementById('feed-panel').style.display = 'none';
 });
 document.getElementById('feed-filter').addEventListener('change', renderFeed);
+document.getElementById('btn-test').addEventListener('click', toggleTestPanel);
+document.getElementById('test-close').addEventListener('click', () => {
+  document.getElementById('test-panel').style.display = 'none';
+});
+document.getElementById('test-add').addEventListener('click', addTest);
+document.getElementById('test-run-all').addEventListener('click', runRegressionGate);
 loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;

@@ -266,10 +266,18 @@ def run_workflow(wf_id, dry=False):
         if session:
             checkpoint(sess_id, wf_id, node_id, "running", {"label": node.get("label", "")})
 
-        # Supervisor 노드: 작업 분해 → 하위 노드에 명령
+        # Supervisor 노드: 작업 분해 → 하위 노드 병렬 실행 (fan-out/fan-in)
         if node.get("type") == "supervisor":
             children = [e["to"] for e in wf_edges if e["from"] == node_id]
-            print(f"  [supervisor] {node.get('label','')} → 하위 {len(children)}개")
+            print(f"  [supervisor] {node.get('label','')} → 하위 {len(children)}개 (병렬)")
+            import concurrent.futures as cf
+            max_parallel = node.get("max_parallel", 0) or 4
+            results_map = {}
+            with cf.ThreadPoolExecutor(max_workers=max_parallel) as pool:
+                futs = {pool.submit(visit, child, trace_id, depth + 1): child for child in children}
+                for fut in cf.as_completed(futs):
+                    results_map[futs[fut]] = fut.result()
+            # fan-in: 병렬 결과를 컨텍스트에 병합
             for child in children:
                 child_node = node_map.get(child)
                 child_agent = child_node.get("agentId") if child_node else None
@@ -318,6 +326,7 @@ def run_workflow(wf_id, dry=False):
         report_chain.append(result)
         if next_id:
             visit(next_id, parent_trace=trace_id, depth=depth + 1)
+        return result
 
     visit(start["id"])
     print(f"=== 완료: {len(report_chain)}개 노드 실행 (trace: {trace_id}) ===")

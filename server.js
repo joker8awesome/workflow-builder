@@ -719,6 +719,45 @@ app.post('/api/ai/decide', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 워크플로우 테스트 스위트 API ===
+app.get('/api/tests', async (req, res) => {
+  try {
+    const { wf } = req.query || {};
+    const { rows } = wf
+      ? await pool.query('SELECT * FROM wf_tests WHERE wf_id = $1 ORDER BY id DESC', [wf])
+      : await pool.query('SELECT * FROM wf_tests ORDER BY id DESC LIMIT 100');
+    res.json({ success: true, tests: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/tests', requireAuth, async (req, res) => {
+  try {
+    const { wf_id, name, input, expected } = req.body || {};
+    if (!wf_id || !name) return res.status(400).json({ success: false, error: 'wf_id/name required' });
+    const { rows } = await pool.query(
+      `INSERT INTO wf_tests (wf_id, name, input, expected) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [wf_id, name, JSON.stringify(input || {}), JSON.stringify(expected || {})]
+    );
+    res.json({ success: true, id: rows[0].id });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+// 회귀 게이트 — 테스트 실행 후 결과 기록
+app.post('/api/tests/:id/result', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    await pool.query(
+      'UPDATE wf_tests SET last_status = $1, last_run_at = now() WHERE id = $2',
+      [status || 'pending', req.params.id]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.delete('/api/tests/:id', requireAuth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM wf_tests WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

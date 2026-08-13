@@ -636,6 +636,8 @@
     <button id="btn-market" class="tb-action">마켓</button>
     <button id="btn-feed" class="tb-action">활동</button>
     <button id="btn-test" class="tb-action">테스트</button>
+    <button id="btn-sim" class="tb-action">시뮬레이션</button>
+    <button id="btn-gov" class="tb-action">거버넌스</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -765,6 +767,14 @@
     <button id="test-add" class="tb-action" style="width:100%;margin-bottom:8px">+ 테스트 케이스 추가</button>
     <button id="test-run-all" class="tb-action" style="width:100%;margin-bottom:10px;background:var(--accent);border-color:var(--accent);color:#04100a;font-weight:700">▶ 회귀 게이트 실행</button>
     <div id="test-body" style="font-size:12px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 거버넌스 대시보드 패널 -->
+  <div id="gov-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:76;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">🛡️ 거버넌스</h4>
+      <button id="gov-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div id="gov-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -2338,6 +2348,20 @@ async function executeWorkflow() {
     }
     const outs = wf.edges.filter(e => e.from === id);
     if (outs.length === 0) return;
+    // 2: 신뢰 점수 기반 자율성 자동 조정 (ATF)
+    if (n.type === 'decision' && !n.condition && n.llm_prompt) {
+      try {
+        const tr = await fetch(API_BASE + '/api/trust');
+        const tj = await tr.json();
+        if (tj.success && n.agentId) {
+          const myTrust = (tj.trust || []).find(t => t.agent_id === n.agentId);
+          if (myTrust && myTrust.trust < 60 && myTrust.runs >= 3) {
+            const ok = await waitApprovalStrong(n.label + ' — 신뢰 ' + myTrust.trust + '% (자동 에스컬레이션)', ['의도 확인', '영향 확인']);
+            if (!ok) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; return; }
+          }
+        }
+      } catch (e) {}
+    }
     // decision: 조건식 → LLM 판단 → Yes 우선
     if (n.type === 'decision') {
       let nextEdge = outs[0];
@@ -3906,6 +3930,60 @@ function onboardingTour() {
   } catch (e) {}
 }
 
+// 3. 시뮬레이션 모드 — 실행 없이 경로/비용/시간 추정
+async function simulateWorkflow() {
+  const wf = currentWorkflow();
+  if (!wf) { toast('워크플로우 없음'); return; }
+  const nodes = wf.nodes || [];
+  const edges = wf.edges || [];
+  const start = nodes.find(n => n.type === 'start');
+  const path = [];
+  let cur = start ? start.id : (nodes[0] ? nodes[0].id : null);
+  const visited = new Set();
+  let steps = 0, estMs = 0, llmCalls = 0;
+  while (cur && steps < 50 && !visited.has(cur)) {
+    visited.add(cur);
+    const n = nodes.find(x => x.id === cur);
+    if (!n) break;
+    path.push(n.label || n.type);
+    steps++;
+    if (n.type === 'decision') { llmCalls++; estMs += 2000; }
+    else if (n.type === 'approval') { estMs += 5000; }
+    else if (n.type === 'reviewer') { estMs += 1500; }
+    else if (n.type === 'process' && n.action) { estMs += 1000; }
+    else { estMs += 300; }
+    const next = edges.find(e => e.from === cur);
+    cur = next ? next.to : null;
+  }
+  const estCost = (llmCalls * 0.003) + (estMs / 1000 * 0.0001);
+  toastHTML('<div style="min-width:300px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">🧪 시뮬레이션 결과</strong>' +
+    '<div style="font-size:12px;color:var(--panel-text-dim)">경로: ' + escapeHtml(path.join(' → ')) + '</div>' +
+    '<div style="font-size:12px;margin-top:8px">단계: ' + steps + ' · LLM 판단: ' + llmCalls + '회<br>' +
+    '예상 시간: ' + Math.round(estMs / 1000) + 's · 예상 비용: $' + estCost.toFixed(4) + '</div>' +
+    '<div style="font-size:11px;color:var(--panel-text-faint);margin-top:8px">읽기 전용 — 실제 실행 없음</div></div>', 10000);
+}
+
+// 5. 거버넌스 대시보드 — 에이전트별 신뢰/자율/위험
+async function renderGovernance() {
+  const body = document.getElementById('gov-body');
+  if (!body) return;
+  try {
+    const r = await fetch(API_BASE + '/api/trust');
+    const j = await r.json();
+    const trust = j.success ? (j.trust || []) : [];
+    const rows = trust.map(t => {
+      const risk = t.trust >= 80 ? '낮음' : t.trust >= 60 ? '중간' : '높음';
+      const color = t.trust >= 80 ? 'var(--accent)' : t.trust >= 60 ? '#d29922' : '#ff5d5d';
+      const autonomy = t.trust >= 80 ? '자율' : t.trust >= 60 ? '감독' : '승인 필수';
+      return '<div style="padding:8px;margin-bottom:6px;background:var(--dark-3);border-radius:8px;font-size:12px">' +
+        '<div style="display:flex;justify-content:space-between"><strong>' + escapeHtml(t.agent_id) + '</strong>' +
+        '<span style="color:' + color + '">신뢰 ' + t.trust + '%</span></div>' +
+        '<div style="font-size:10px;color:var(--panel-text-dim)">실행 ' + t.runs + '회 · 위험 ' + risk + ' · 자율성: ' + autonomy + '</div></div>';
+    }).join('');
+    body.innerHTML = rows || '<span style="color:var(--panel-text-faint)">신뢰 데이터 없음</span>';
+  } catch (e) { body.innerHTML = '<span style="color:var(--panel-text-faint)">로드 실패</span>'; }
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3968,6 +4046,14 @@ document.getElementById('test-close').addEventListener('click', () => {
 });
 document.getElementById('test-add').addEventListener('click', addTest);
 document.getElementById('test-run-all').addEventListener('click', runRegressionGate);
+document.getElementById('btn-sim').addEventListener('click', simulateWorkflow);
+document.getElementById('btn-gov').addEventListener('click', () => {
+  document.getElementById('gov-panel').style.display = 'block';
+  renderGovernance();
+});
+document.getElementById('gov-close').addEventListener('click', () => {
+  document.getElementById('gov-panel').style.display = 'none';
+});
 loadAgents();
 setTimeout(() => { if (serverOnline) flushOfflineQueue(); }, 3000);
 onboardingTour();

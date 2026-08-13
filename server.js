@@ -266,6 +266,19 @@ function maskSecrets(str) {
 }
 function maskedError(e) { return maskSecrets(e.message); }
 
+// === PII 레드액션 — LLM 프롬프트 전에 민감 데이터 마스킹 ===
+function redactPII(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/[0-9]{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12][0-9]|3[01])-[1-4][0-9]{6}/g, '[SSN]')
+    .replace(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/g, '[EMAIL]')
+    .replace(/\b(010|011|016|017|018|019)[- ]?\d{3,4}[- ]?\d{4}\b/g, '[PHONE]')
+    .replace(/\b\d{6}-\d{7}\b/g, '[RESID]')
+    .replace(/\b(\d{4}[- ]?){4}\b/g, '[CARD]');
+}
+// 감사 로그 저장 시 PII 마스킹
+function maskAudit(text) { return redactPII(text || ''); }
+
 // === LLM 판단 API (decision 노드: llm_prompt) ===
 app.post('/api/ai/decide', async (req, res) => {
   try {
@@ -598,6 +611,37 @@ function decryptSecret(data) {
   } catch (e) { return data; }
 }
 
+// === PII 레드액션 API — LLM 프롬프트 전 클라이언트가 호출 ===
+app.post('/api/redact', async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    res.json({ success: true, redacted: redactPII(text), original_len: String(text || '').length });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 에이전트 신뢰 점수 API — 성공률/블로커 기반 ===
+app.get('/api/trust', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.status, s.agent_id FROM agent_checkpoints c
+       LEFT JOIN agent_sessions s ON c.session_id = s.id
+       ORDER BY c.id DESC LIMIT 500`);
+    const byAgent = {};
+    rows.forEach(r => {
+      const a = r.agent_id || 'unknown';
+      if (!byAgent[a]) byAgent[a] = { total: 0, ok: 0 };
+      byAgent[a].total++;
+      if (r.status === 'done') byAgent[a].ok++;
+    });
+    const trust = Object.entries(byAgent).map(([agent, d]) => ({
+      agent_id: agent,
+      trust: d.total ? Math.round(d.ok / d.total * 100) : 50,
+      runs: d.total,
+    }));
+    res.json({ success: true, trust });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === 1. 에이전트 자격증명/권한 API ===
 app.get('/api/credentials', async (req, res) => {
   try {
@@ -626,7 +670,7 @@ app.post('/api/audit', async (req, res) => {
     const { actor, agent_id, resource, action, detail } = req.body || {};
     await pool.query(
       `INSERT INTO audit_logs (actor, agent_id, resource, action, detail) VALUES ($1,$2,$3,$4,$5)`,
-      [actor || 'user', agent_id || '', resource || '', action || '', detail || '']
+      [actor || 'user', agent_id || '', maskAudit(resource || ''), action || '', maskAudit(detail || '')]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }

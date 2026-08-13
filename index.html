@@ -190,6 +190,7 @@
   #canvas .node.type-decision{--node-accent:#d29922}
   #canvas .node.type-approval{--node-accent:#b45f06}
   #canvas .node.type-supervisor{--node-accent:#8957e5}
+  #canvas .node.type-reviewer{--node-accent:#0d9488}
   #canvas .node.type-end{--node-accent:#d1242f}
   #canvas .node:hover{border-color:color-mix(in srgb, var(--accent) 60%, var(--node-border))}
   #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow);transform:translateY(-2px)}
@@ -1051,6 +1052,7 @@ const NODE_TYPES = {
   decision:   { color: '#d29922', icon: '◇', label: '판단', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 6-6 6-6-6z"/></svg>' },
   approval:   { color: '#b45f06', icon: '⏸', label: '승인', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="3.5" height="10" rx="1"/><rect x="8.5" y="2" width="3.5" height="10" rx="1"/></svg>' },
   supervisor: { color: '#8957e5', icon: '§', label: '감독', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 3v6l-6 3-6-3V4z"/><circle cx="7" cy="7" r="2"/></svg>' },
+  reviewer:   { color: '#0d9488', icon: '✓', label: '검토', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M1 7l4 4 8-9"/><path d="M1 7l4 4 8-9" stroke="#0d9488" stroke-width="2" fill="none"/></svg>' },
   end:        { color: '#d1242f', icon: '●', label: '종료', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><circle cx="7" cy="7" r="5"/></svg>' }
 };
 let selected = { type: null, id: null };
@@ -1272,6 +1274,13 @@ function renderInspector() {
         '<option value="approval"' + (n.autonomy === 'approval' ? ' selected' : '') + '>승인 필수</option></select>' : ''}
       ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
+      <label>출력 길이 제한 (max_tokens)</label>
+      <select id="f-maxtok" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
+        <option value="">자동 (기본)</option>
+        <option value="50"' + (n.max_tokens == 50 ? ' selected' : '') + '>간결 (50)</option>
+        <option value="200"' + (n.max_tokens == 200 ? ' selected' : '') + '>표준 (200)</option>
+        <option value="800"' + (n.max_tokens == 800 ? ' selected' : '') + '>상세 (800)</option>
+      </select>
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
       ${n.type === 'approval' ? '<label>승인 체크리스트 (콤마 구분)</label><input id="f-acl" value="' + escapeHtml((n.approval_checklist || []).join(', ')) + '" placeholder="의도, 출처, 영향, 롤백">' : ''}
       <label>작업 상태</label>
@@ -1311,6 +1320,8 @@ function renderInspector() {
     const fCond2 = document.getElementById('f-cond2');
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
+    const fMax = document.getElementById('f-maxtok');
+    if (fMax) fMax.addEventListener('change', (e) => { n.max_tokens = e.target.value ? +e.target.value : undefined; saveStore(); });
     document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });
     document.getElementById('f-status').addEventListener('change', (e) => { n.status = e.target.value; saveStore(); renderCanvas(); renderAgentDashboard(); });
     const fAcl = document.getElementById('f-acl');
@@ -1758,7 +1769,7 @@ const SHORTCUTS = [
   ['Delete', '삭제'], ['?', '단축키 도움말'], ['Shift+클릭', '다중 선택'],
   ['휠', '줌'], ['중간버튼 드래그', '팬'], ['Enter(실행모드)', '다음 단계']
 ];
-function showShortcuts() {
+function showShortcutPanel() {
   const rows = SHORTCUTS.map(([k, v]) => '<div style="display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:1px solid var(--panel-border)"><span style="color:var(--accent);font-weight:700">' + k + '</span><span style="color:var(--panel-text-dim)">' + v + '</span></div>').join('');
   toastHTML('<div style="min-width:260px"><strong style="display:block;margin-bottom:8px">단축키</strong>' + rows + '</div>', 6000);
 }
@@ -1792,7 +1803,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   // 단축키 도움말
-  if (e.key === '?') { e.preventDefault(); showShortcuts(); return; }
+  if (e.key === '?') { e.preventDefault(); showShortcutPanel(); return; }
   // 삭제
   if ((e.key === 'Delete' || e.key === 'Backspace') && (selected.id || multiSelect.size > 0)) {
     e.preventDefault();
@@ -2307,11 +2318,20 @@ async function executeWorkflow() {
     const n = wf.nodes.find(x => x.id === id);
     if (!n || path.includes(n)) return;
     path.push(n);
+    // 리뷰어/리플렉션 노드 — 결과 검증 (외부 피드백)
+    if (n.type === 'reviewer') {
+      document.getElementById('rs-status').textContent = '🔍 검토: ' + (n.label || '');
+      await new Promise(r => setTimeout(r, 800));
+      const ok = Math.random() > 0.15;
+      logRun('검토: ' + (n.label || '') + (ok ? ' ✅ 통과' : ' ⛔ 반려'));
+      const prevEdge = wf.edges.find(e => e.to === id);
+      if (!ok && prevEdge) { path.pop(); await visit(prevEdge.from); return; }
+    }
     // 승인 게이트 노드 — Strong HITL (체크리스트 + 타임아웃 fail-safe)
     if (n.type === 'approval') {
       const checklist = n.approval_checklist || ['의도 확인', '데이터 출처 확인', '영향 범위 확인', '롤백 계획 확인'];
-      const ok = await waitApprovalStrong(n.label || '승인 필요', checklist);
-      if (!ok) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
+      const apprOk = await waitApprovalStrong(n.label || '승인 필요', checklist);
+      if (!apprOk) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
     } else {
       // 재시도/폴백 반영 실행
       await runNodeWithRetry(n);
@@ -3092,9 +3112,12 @@ async function renderCostLatency() {
     const totalMs = spans.reduce((a, s) => a + (s.duration_ms || 0), 0);
     const avgMs = Math.round(totalMs / spans.length);
     const failCount = spans.filter(s => !(s.result && s.result.ok)).length;
+    const estTokens = Math.round(totalMs * 0.5);
+    const estCost = (estTokens / 1000) * 0.002;
     body.innerHTML += '<div style="margin-top:14px;font-size:11px;color:var(--panel-text-dim)">' +
       '<strong style="color:var(--panel-text)">비용/지연</strong><br>' +
-      '평균 지연: ' + avgMs + 'ms · 총 ' + spans.length + ' 실행 · 실패 ' + failCount + '건</div>';
+      '평균 지연: ' + avgMs + 'ms · 총 ' + spans.length + ' 실행 · 실패 ' + failCount + '건<br>' +
+      '추정 토큰: ' + estTokens + 'K · 추정 비용: $' + estCost.toFixed(4) + '</div>';
   } catch (e) {}
 }
 
@@ -3848,6 +3871,41 @@ function toggleTestPanel() {
   if (panel.style.display === 'block') renderTests();
 }
 
+// 4. 단축키 도움말 패널
+function showShortcutPanel() {
+  toastHTML('<div style="min-width:360px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">⌨️ 단축키</strong>' +
+    '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+Z / Ctrl+Shift+Z</td><td>실행 취소 / 다시 실행</td></tr>' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+D</td><td>노드 복제</td></tr>' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+K</td><td>명령 팔레트</td></tr>' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Delete</td><td>선택 삭제</td></tr>' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">? / Shift+?</td><td>단축키 도움말</td></tr>' +
+    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">화살표</td><td>노드 이동 (Shift=크게)</td></tr>' +
+    '</table></div>', 8000);
+}
+
+// 5. 온보딩 워크스루 — 첫 방문 시 안내
+function onboardingTour() {
+  try {
+    if (localStorage.getItem(LS_KEY + '_onboarded')) return;
+    setTimeout(() => {
+      toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:8px;color:var(--accent)">👋 시작하기</strong>' +
+        '<div style="font-size:12px;color:var(--panel-text-dim);margin-bottom:8px">' +
+        '1. <strong>우클릭</strong>으로 노드 추가<br>' +
+        '2. 노드 <strong>가장자리 핸들</strong> 드래그로 연결<br>' +
+        '3. <strong>Ctrl+K</strong> 명령 팔레트<br>' +
+        '4. [에이전트] 탭에서 팀 등록<br>' +
+        '5. [▶ 실행]으로 워크플로우 실행</div>' +
+        '<button id="onboard-done" class="tb-action" style="width:100%">시작하기</button></div>', 15000);
+      const obDone = document.getElementById('onboard-done');
+      if (obDone) obDone.addEventListener('click', () => {
+        localStorage.setItem(LS_KEY + '_onboarded', '1');
+        document.querySelectorAll('.toast').forEach(t => t.remove());
+      });
+    }, 1500);
+  } catch (e) {}
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3912,6 +3970,7 @@ document.getElementById('test-add').addEventListener('click', addTest);
 document.getElementById('test-run-all').addEventListener('click', runRegressionGate);
 loadAgents();
 setTimeout(() => { if (serverOnline) flushOfflineQueue(); }, 3000);
+onboardingTour();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;
 showStats = async function() {

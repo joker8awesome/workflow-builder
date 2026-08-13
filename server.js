@@ -421,6 +421,34 @@ app.get('/api/backup', async (req, res) => {
   }
 });
 
+// === 에이전트 레지스트리 API ===
+app.get('/api/agents', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM agents ORDER BY created_at DESC');
+    res.json({ success: true, agents: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.post('/api/agents', requireAuth, async (req, res) => {
+  try {
+    const { id, name, person, role, machine, color } = req.body || {};
+    if (!id) return res.status(400).json({ success: false, error: 'id required' });
+    await pool.query(
+      `INSERT INTO agents (id, name, person, role, machine, color)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, person=EXCLUDED.person,
+         role=EXCLUDED.role, machine=EXCLUDED.machine, color=EXCLUDED.color`,
+      [id, name || '', person || '', role || '', JSON.stringify(machine || {}), color || '#00ff87']
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.delete('/api/agents/:id', requireAuth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM agents WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

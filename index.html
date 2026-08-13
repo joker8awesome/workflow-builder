@@ -459,6 +459,28 @@
   #run-status-bar span{white-space:nowrap}
   #rs-status{color:var(--accent);font-weight:700}
   #rs-time{color:var(--panel-text-faint)}
+
+  /* 에이전트 배지 */
+  .agent-badge{
+    position:absolute;bottom:-9px;left:10px;
+    font-size:9px;font-weight:700;color:#04100a;
+    padding:1px 6px;border-radius:6px;white-space:nowrap;
+    max-width:110px;overflow:hidden;text-overflow:ellipsis;
+  }
+  .agent-badge.unassigned{
+    background:transparent;color:var(--panel-text-faint);
+    border:1px dashed var(--dark-border);font-weight:400;
+  }
+  /* 미할당 노드 — 점선 강조 */
+  #canvas .node:has(.agent-badge.unassigned){border-style:dashed}
+  /* 선택된 에이전트 담당 노드 강조 */
+  #canvas .node.agent-highlight{
+    border-color:var(--accent) !important;
+    box-shadow:0 0 0 2px var(--accent-soft), 0 0 14px var(--accent-glow) !important;
+  }
+  /* 에이전트 패널 */
+  #agents-panel h4{color:var(--accent);margin-bottom:8px}
+  .agent-item:hover{border-color:var(--accent-strong) !important}
 }
 
 </style>
@@ -488,6 +510,7 @@
     <button id="btn-bundle" class="tb-action">번들</button>
     <button id="btn-trace" class="tb-action">트레이스</button>
     <button id="btn-diff" class="tb-action">diff</button>
+    <button id="btn-agents" class="tb-action">에이전트</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -543,6 +566,15 @@
       <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
     </div>
     <div id="trace-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
+  </div>
+  <!-- 에이전트 레지스트리 패널 -->
+  <div id="agents-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">🤖 에이전트 레지스트리</h4>
+      <button id="agents-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <button id="agent-add" class="tb-action" style="width:100%;margin-bottom:12px">+ 에이전트 등록</button>
+    <div id="agents-list" style="font-size:13px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -834,10 +866,17 @@ function renderCanvas() {
     el.style.left = n.x + 'px';
     el.style.top = n.y + 'px';
     el.dataset.id = n.id;
+    const agent = getAgent(n.agentId);
+    const agentBadge = agent
+      ? `<span class="agent-badge" style="background:${escapeHtml(agent.color)}">${escapeHtml(agent.name)}</span>`
+      : `<span class="agent-badge unassigned" title="미할당">미할당</span>`;
     el.innerHTML = `<span class="nicon" style="background:${NODE_TYPES[n.type].color}">${NODE_TYPES[n.type].icon}</span>
       <span class="nlabel">${escapeHtml(n.label || NODE_TYPES[n.type].label)}</span>
+      ${agentBadge}
       <span class="nport" data-port="out"></span>
       ${n.locked ? '<span class="lock-badge">🔒</span>' : ''}`;
+    // 선택된 에이전트의 담당 노드 강조
+    if (selectedAgent && n.agentId === selectedAgent) el.classList.add('agent-highlight');
     el.addEventListener('mousedown', (e) => startDrag(e, n));
     el.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1001,6 +1040,11 @@ function renderInspector() {
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
       <label>노드 색상</label><input id="f-color" type="color" value="${n.color || NODE_TYPES[n.type].color}">
+      <label>담당 에이전트</label>
+      <select id="f-agent" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
+        <option value="">미할당</option>
+        ${agents.map(a => '<option value="' + escapeHtml(a.id) + '"' + (n.agentId === a.id ? ' selected' : '') + '>' + escapeHtml(a.name) + '</option>').join('')}
+      </select>
       <label>댓글</label><textarea id="f-comment" placeholder="댓글 입력..."></textarea>
       <button id="f-add-comment" style="margin-top:4px">댓글 추가</button>
       <div id="f-comment-list" style="font-size:11px;color:var(--panel-text-dim)"></div>
@@ -1013,6 +1057,10 @@ function renderInspector() {
       saveStore();
     });
     document.getElementById('f-action').addEventListener('input', (e) => { n.action = e.target.value; saveStore(); });
+    document.getElementById('f-agent').addEventListener('change', (e) => {
+      n.agentId = e.target.value || undefined;
+      saveStore(); renderCanvas(); renderAgents();
+    });
     const fLlm = document.getElementById('f-llm');
     if (fLlm) fLlm.addEventListener('input', (e) => { n.llm_prompt = e.target.value; saveStore(); });
     const fCond2 = document.getElementById('f-cond2');
@@ -2768,6 +2816,117 @@ function initPresence() {
   }
 }
 
+// ═══ 에이전트 협업 모듈 ═══
+let agents = [];
+let selectedAgent = null;
+
+// 에이전트 로드 (서버 우선, 실패 시 로컬)
+async function loadAgents() {
+  if (serverOnline) {
+    try {
+      const r = await fetch(API_BASE + '/api/agents');
+      const j = await r.json();
+      if (j.success) { agents = j.agents || []; saveAgentsLocal(); return; }
+    } catch (e) {}
+  }
+  try { agents = JSON.parse(localStorage.getItem(LS_KEY + '_agents') || '[]'); } catch (e) { agents = []; }
+}
+function saveAgentsLocal() {
+  try { localStorage.setItem(LS_KEY + '_agents', JSON.stringify(agents)); } catch (e) {}
+}
+function getAgent(id) { return agents.find(a => a.id === id) || null; }
+
+// 에이전트 등록 폼
+function showAgentForm(agent) {
+  const a = agent || {};
+  toastHTML('' +
+    '<div style="min-width:360px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">' + (agent ? '에이전트 수정' : '에이전트 등록') + '</strong>' +
+    '<input id="ag-name" placeholder="이름" value="' + escapeHtml(a.name || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-person" placeholder="담당자" value="' + escapeHtml(a.person || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-role" placeholder="역할" value="' + escapeHtml(a.role || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-spec" placeholder="머신스펙 (예: 8vCPU/16GB/GPU1)" value="' + escapeHtml((a.machine || {}).spec || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-env" placeholder="구축환경 (예: Docker)" value="' + escapeHtml((a.machine || {}).env || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-ws" placeholder="워크스페이스 (예: /opt/data/...)" value="' + escapeHtml((a.machine || {}).workspace || '') + '" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-sess" placeholder="세션별 역할" value="' + escapeHtml((a.machine || {}).session_role || '') + '" style="width:100%;padding:8px;margin-bottom:10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="ag-color" type="color" value="' + (a.color || '#00ff87') + '" style="margin-bottom:10px"><br>' +
+    '<div style="display:flex;gap:8px"><button id="ag-save" class="tb-action" style="flex:1">저장</button><button id="ag-cancel" class="tb-action">취소</button></div></div>', 60000);
+  const saveBtn = document.querySelector('#ag-save');
+  saveBtn.addEventListener('click', async () => {
+    const data = {
+      id: (agent && agent.id) || 'ag_' + Date.now().toString(36),
+      name: document.querySelector('#ag-name').value.trim(),
+      person: document.querySelector('#ag-person').value.trim(),
+      role: document.querySelector('#ag-role').value.trim(),
+      machine: {
+        spec: document.querySelector('#ag-spec').value.trim(),
+        env: document.querySelector('#ag-env').value.trim(),
+        workspace: document.querySelector('#ag-ws').value.trim(),
+        session_role: document.querySelector('#ag-sess').value.trim(),
+      },
+      color: document.querySelector('#ag-color').value,
+    };
+    if (!data.name) { toast('이름 필요'); return; }
+    if (agent) {
+      const idx = agents.findIndex(x => x.id === agent.id);
+      if (idx >= 0) agents[idx] = { ...agents[idx], ...data };
+    } else {
+      agents.push(data);
+    }
+    saveAgentsLocal();
+    if (serverOnline) {
+      await fetch(API_BASE + '/api/agents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).catch(() => {});
+    }
+    renderAgents(); renderCanvas(); renderInspector();
+    toast('에이전트 저장됨');
+  });
+  document.querySelector('#ag-cancel').addEventListener('click', () => { document.querySelectorAll('.toast').forEach(t => t.remove()); });
+}
+
+// 에이전트 패널 렌더
+function renderAgents() {
+  const list = document.getElementById('agents-list');
+  if (!list) return;
+  const wf = currentWorkflow();
+  const nodes = (wf && wf.nodes) || [];
+  list.innerHTML = agents.length === 0
+    ? '<span style="color:var(--panel-text-faint)">등록된 에이전트 없음</span>'
+    : agents.map(a => {
+      const mine = nodes.filter(n => n.agentId === a.id).length;
+      const warn = mine >= 5 ? ' <span style="color:#ff5d5d">⚠ ' + mine + '개</span>' : ' (' + mine + ')';
+      return '<div class="agent-item" data-id="' + a.id + '" style="padding:10px;margin-bottom:8px;background:var(--dark-3);border:1px solid ' + (selectedAgent === a.id ? 'var(--accent)' : 'var(--dark-border)') + ';border-radius:10px;cursor:pointer">' +
+        '<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(a.color) + '"></span>' +
+        '<strong>' + escapeHtml(a.name) + '</strong><span style="color:var(--panel-text-faint);font-size:11px">' + escapeHtml(a.person || '') + '</span></div>' +
+        '<div style="font-size:11px;color:var(--panel-text-dim);margin-top:4px">역할: ' + escapeHtml(a.role || '-') + ' · 담당 노드' + warn + '</div>' +
+        '<div style="font-size:10px;color:var(--panel-text-faint);margin-top:2px">' + escapeHtml((a.machine || {}).spec || '') + ' · ' + escapeHtml((a.machine || {}).env || '') + ' · ' + escapeHtml((a.machine || {}).workspace || '') + '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:6px"><button class="tb-action ag-edit" style="padding:3px 8px;font-size:11px">수정</button>' +
+        '<button class="tb-action ag-del" style="padding:3px 8px;font-size:11px;color:#ff5d5d">삭제</button></div></div>';
+    }).join('');
+  // 이벤트
+  list.querySelectorAll('.agent-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.ag-edit') || e.target.closest('.ag-del')) return;
+      selectedAgent = selectedAgent === el.dataset.id ? null : el.dataset.id;
+      renderAgents(); renderCanvas();
+    });
+    el.querySelector('.ag-edit').addEventListener('click', (e) => { e.stopPropagation(); showAgentForm(getAgent(el.dataset.id)); });
+    el.querySelector('.ag-del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('에이전트 삭제?')) return;
+      agents = agents.filter(x => x.id !== el.dataset.id);
+      saveAgentsLocal();
+      if (serverOnline) await fetch(API_BASE + '/api/agents/' + el.dataset.id, { method: 'DELETE' }).catch(() => {});
+      renderAgents(); renderCanvas();
+    });
+  });
+}
+
+// 에이전트 탭 토글
+function toggleAgentsPanel() {
+  const panel = document.getElementById('agents-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') renderAgents();
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -2792,6 +2951,12 @@ initShareDemo();
 initCommandPalette();
 setTimeout(initPresence, 800);
 document.getElementById('btn-diff').addEventListener('click', showWfDiff);
+document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
+document.getElementById('agents-close').addEventListener('click', () => {
+  document.getElementById('agents-panel').style.display = 'none';
+});
+document.getElementById('agent-add').addEventListener('click', () => showAgentForm(null));
+loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;
 showStats = async function() {

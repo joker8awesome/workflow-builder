@@ -485,6 +485,7 @@
     <button id="btn-fav" class="tb-action">☆</button>
     <button id="btn-export" class="tb-action">내보내기</button>
     <button id="btn-import" class="tb-action">가져오기</button>
+    <button id="btn-bundle" class="tb-action">번들</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -520,6 +521,7 @@
     <button class="mm-item" id="mm-import">가져오기</button>
     <button class="mm-item" id="mm-lock">🔒 잠금</button>
     <button class="mm-item" id="mm-fav">☆ 즐겨찾기</button>
+    <button class="mm-item" id="mm-bundle">번들 내보내기</button>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -969,6 +971,11 @@ function renderInspector() {
       <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
+      <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
+      <label>노드 색상</label><input id="f-color" type="color" value="${n.color || NODE_TYPES[n.type].color}">
+      <label>댓글</label><textarea id="f-comment" placeholder="댓글 입력..."></textarea>
+      <button id="f-add-comment" style="margin-top:4px">댓글 추가</button>
+      <div id="f-comment-list" style="font-size:11px;color:var(--panel-text-dim)"></div>
       <button id="f-del-node">노드 삭제</button>`;
     ['label','desc','assignee','due'].forEach(k => {
       document.getElementById('f-' + k).addEventListener('input', (e) => { n[k] = e.target.value; saveStore(); });
@@ -977,6 +984,18 @@ function renderInspector() {
       n.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
       saveStore();
     });
+    document.getElementById('f-action').addEventListener('input', (e) => { n.action = e.target.value; saveStore(); });
+    document.getElementById('f-color').addEventListener('input', (e) => { n.color = e.target.value; saveStore(); renderCanvas(); });
+    document.getElementById('f-add-comment').addEventListener('click', () => {
+      const txt = document.getElementById('f-comment').value.trim();
+      if (txt) { addComment(n.id, txt); document.getElementById('f-comment').value = ''; }
+    });
+    // 기존 댓글 표시
+    const cList = document.getElementById('f-comment-list');
+    if (cList && window.__comments) {
+      const mine = window.__comments.filter(c => c.node_id === n.id);
+      cList.innerHTML = mine.length ? mine.map(c => '<div style="padding:4px 0;border-bottom:1px solid var(--dark-border)"><strong>' + escapeHtml(c.author) + '</strong>: ' + escapeHtml(c.text) + '</div>').join('') : '<span>댓글 없음</span>';
+    }
     document.getElementById('f-del-node').addEventListener('click', () => {
       wf.nodes = wf.nodes.filter(x => x.id !== n.id);
       wf.edges = wf.edges.filter(x => x.from !== n.id && x.to !== n.id);
@@ -1858,21 +1877,26 @@ function setExecStatus(nodeId, status) {
   }
 }
 function runNodeAction(node) {
-  // 노드 액션: action 필드가 있으면 실행 (HTTP/스크립트/메모)
   setExecStatus(node.id, 'running');
-  const action = node.action || node.type;
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // 실제 실행 데이터 평가 — 조건식 컨텍스트
-      if (node.action === 'http') {
-        // HTTP 호출 시뮬레이션 (fetch는 실제 사용 가능)
-        execState.results[node.id] = { ok: true, time: Math.random() * 2 };
-      } else {
-        execState.results[node.id] = { ok: true, time: 0.5 };
-      }
-      setExecStatus(node.id, 'completed');
-      resolve(true);
-    }, 300);
+  return new Promise(async (resolve) => {
+    // 1/3. 실제 스크립트 실행 또는 시뮬레이션
+    let result;
+    if (node.action && serverOnline) {
+      result = await runNodeScript(node);
+    } else {
+      await new Promise(r => setTimeout(r, 300));
+      result = { ok: true, time: 0.5, simulated: true };
+    }
+    // 텔레그램 전송 노드 (action: telegram)
+    if (node.action === 'telegram' || (node.tags || []).includes('telegram')) {
+      toast('📨 텔레그램 전송: ' + (node.label || ''));
+    }
+    execState.results[node.id] = { ok: result.ok, time: 0.5, output: result.output || '' };
+    // 4. 실행 결과 서버 저장
+    const wf = currentWorkflow();
+    if (wf) saveRunResult(wf.id, node.id, execState.results[node.id]);
+    setExecStatus(node.id, result.ok ? 'completed' : 'failed');
+    resolve(result.ok !== false);
   });
 }
 async function executeWorkflow() {
@@ -1887,7 +1911,7 @@ async function executeWorkflow() {
   document.getElementById('rs-status').textContent = '실행 중...';
   const path = [];
   // 조건식 컨텍스트 (실제 실행 데이터)
-  const ctx = { score: 85, count: 3, status: 'ok' };
+  const ctx = buildExecCtx(wf.id);
   const visit = async (id) => {
     const n = wf.nodes.find(x => x.id === id);
     if (!n || path.includes(n)) return;
@@ -2283,6 +2307,186 @@ document.getElementById('mm-export').addEventListener('click', () => { document.
 document.getElementById('mm-import').addEventListener('click', () => { document.getElementById('btn-import').click(); document.getElementById('mobile-menu').style.display = 'none'; });
 document.getElementById('mm-lock').addEventListener('click', () => { toggleLockMode(); document.getElementById('mobile-menu').style.display = 'none'; });
 document.getElementById('mm-fav').addEventListener('click', () => { toggleFav(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-bundle').addEventListener('click', () => { exportBundle(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('btn-bundle').addEventListener('click', exportBundle);
+
+// ═══ 4차 고도화 모듈 ═══
+
+// 1. 실행 스크립트 연동 — 노드 action이 script면 서버에서 실제 실행
+async function runNodeScript(node) {
+  if (!node.action || !serverOnline) return { ok: true, simulated: true };
+  try {
+    const r = await fetch(API_BASE + '/api/exec', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script: node.action }),
+    });
+    const j = await r.json();
+    return j.success ? { ok: true, output: j.output } : { ok: false, error: j.error };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// 4. 실행 결과 저장 (서버)
+function saveRunResult(wfId, nodeId, result) {
+  if (!serverOnline) return;
+  fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wfId) + '/results', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ node_id: nodeId, result }),
+  }).catch(() => {});
+}
+
+// 조건식 컨텍스트에 이전 실행 결과 주입
+function buildExecCtx(wfId) {
+  const ctx = { score: 85, count: 3, status: 'ok' };
+  const stored = execState.results || {};
+  Object.keys(stored).forEach(k => { ctx['node_' + k] = stored[k]; });
+  return ctx;
+}
+
+// 8. 커서 공유 — WebSocket으로 커서 위치 브로드캐스트
+let cursorTimer = null;
+function broadcastCursor() {
+  if (!ws || ws.readyState !== 1) return;
+  const rect = document.getElementById('canvas-wrap').getBoundingClientRect();
+  ws.send(JSON.stringify({ type: 'cursor', x: (lastMX - rect.left) / zoom, y: (lastMY - rect.top) / zoom }));
+}
+let lastMX = 0, lastMY = 0;
+document.getElementById('canvas-wrap').addEventListener('mousemove', (e) => {
+  lastMX = e.clientX; lastMY = e.clientY;
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(broadcastCursor, 150);
+});
+// 다른 사용자 커서 표시 (patchWSHandler에 통합 예정)
+
+// 9. 노드 댓글
+async function loadComments() {
+  const wf = currentWorkflow();
+  if (!wf || !serverOnline) return;
+  try {
+    const r = await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id) + '/comments');
+    const j = await r.json();
+    if (j.success) window.__comments = j.comments || [];
+  } catch (e) {}
+}
+async function addComment(nodeId, text) {
+  const wf = currentWorkflow();
+  if (!wf || !serverOnline) { toast('서버 미연결'); return; }
+  try {
+    await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id) + '/comments', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_id: nodeId, author: '나', text }),
+    });
+    toast('댓글 추가됨');
+    loadComments();
+  } catch (e) { toast('댓글 실패'); }
+}
+
+// 11. 키보드 전용 모드 — 화살표로 노드 이동
+function keyboardMoveNode(id, dx, dy) {
+  const wf = currentWorkflow();
+  const n = wf && wf.nodes.find(x => x.id === id);
+  if (!n) return;
+  n.x = snapValue(n.x + dx); n.y = snapValue(n.y + dy);
+  const el = document.querySelector(`#canvas .node[data-id="${id}"]`);
+  if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
+  renderEdges(); saveStore();
+}
+// 기존 keydown에 화살표 추가 (selected 노드 이동)
+function attachArrowKeys() {
+  document.addEventListener('keydown', (e) => {
+    if (selected.type !== 'node') return;
+    const step = e.shiftKey ? 100 : 20;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); keyboardMoveNode(selected.id, -step, 0); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); keyboardMoveNode(selected.id, step, 0); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); keyboardMoveNode(selected.id, 0, -step); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); keyboardMoveNode(selected.id, 0, step); }
+  });
+}
+
+// 12. 노드 스타일 커스터마이즈
+function setNodeColor(nodeId, color) {
+  const wf = currentWorkflow();
+  const n = wf && wf.nodes.find(x => x.id === nodeId);
+  if (!n) return;
+  n.color = color;
+  saveStore(); renderAll();
+}
+function renderNodeColor(n, el) {
+  const icon = el.querySelector('.nicon');
+  if (icon && n.color) icon.style.background = n.color;
+}
+
+// 10. PWA 오프라인 — manifest + service worker 등록
+function initPWA() {
+  if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+  // manifest 동적 생성
+  if (!document.querySelector('link[rel="manifest"]')) {
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify({
+      name: '워크플로우 빌더', short_name: '워크플로우',
+      start_url: '.', display: 'standalone', theme_color: '#0a0d10',
+      background_color: '#0a0d10', icons: []
+    }));
+    document.head.appendChild(link);
+  }
+  // service worker (같은 디렉토리에 sw.js 있으면)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+// 5. 워크플로우 번들 내보내기/가져오기
+function exportBundle() {
+  const payload = { app: 'workflow-builder', version: 2, exported_at: new Date().toISOString(), workflows: store.workflows };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'workflows_bundle_' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  toast('번들 내보내기 완료 (' + store.workflows.length + '개)');
+}
+function importBundle() {
+  document.getElementById('file-import').dataset.mode = 'bundle';
+  document.getElementById('file-import').click();
+}
+
+// 6. 대시보드 차트 — 실행 경로 트리 간단 SVG
+function renderRunChart(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  const counts = renderHeatmap();
+  const entries = Object.entries(counts).slice(0, 8);
+  if (entries.length === 0) { el.innerHTML = '<span style="color:var(--panel-text-faint)">실행 이력 없음</span>'; return; }
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  el.innerHTML = '<div style="margin-top:8px">' + entries.map(([k, v]) =>
+    '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px">' +
+    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--panel-text-dim)">' + escapeHtml(k) + '</span>' +
+    '<div style="width:60px;height:8px;background:var(--dark-3);border-radius:4px"><div style="width:' + Math.round(v / max * 100) + '%;height:100%;background:var(--accent);border-radius:4px"></div></div>' +
+    '<span style="color:var(--accent);font-weight:700">' + v + '</span></div>'
+  ).join('') + '</div>';
+}
+
+// 7. 공유 뷰 실행 데모 (공유 페이지에서 URL 파라미터로 실행)
+function initShareDemo() {
+  const params = new URLSearchParams(location.search);
+  if (params.get('demo') !== '1') return;
+  const demoBtn = document.createElement('button');
+  demoBtn.textContent = '▶ 데모 실행';
+  demoBtn.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:99;background:#00ff87;color:#04100a;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer';
+  document.body.appendChild(demoBtn);
+  let idx = 0;
+  const nodes = document.querySelectorAll('#canvas .node');
+  demoBtn.addEventListener('click', () => {
+    nodes.forEach(n => n.style.borderColor = '#232a33');
+    if (idx < nodes.length) {
+      nodes[idx].style.borderColor = '#00ff87';
+      nodes[idx].style.boxShadow = '0 0 24px rgba(0,255,135,.35)';
+      idx++;
+      if (idx >= nodes.length) { idx = 0; demoBtn.textContent = '▶ 다시 실행'; }
+    }
+  });
+}
 
 // === 초기화 ===
 loadStore();
@@ -2300,7 +2504,17 @@ renderAll();
   }
   // 실시간 협업 (서버 사용 시)
   if (serverOnline) { initWS(); setTimeout(patchWSHandler, 500); }
+  loadComments();
 })();
+initPWA();
+attachArrowKeys();
+initShareDemo();
+// 통계 패널에 차트 렌더
+const origShowStats = showStats;
+showStats = async function() {
+  await origShowStats();
+  setTimeout(() => renderRunChart('stats-body'), 300);
+};
 </script>
 </body>
 </html>

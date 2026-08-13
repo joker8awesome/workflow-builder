@@ -256,6 +256,69 @@ app.get('/api/workflows/:id/logs', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// === 실행 스크립트 API (노드 액션: script) ===
+app.post('/api/exec', async (req, res) => {
+  try {
+    const { script, args } = req.body || {};
+    if (!script || typeof script !== 'string') {
+      return res.status(400).json({ success: false, error: 'script required' });
+    }
+    // 안전성: 실행 가능한 명령만 허용 (셸 메타문자 제한)
+    const SAFE = /^[a-zA-Z0-9_\/.\-\s=]+$/;
+    if (!SAFE.test(script)) {
+      return res.status(400).json({ success: false, error: 'invalid script (safe mode)' });
+    }
+    const { execSync } = require('child_process');
+    const out = execSync(script, { encoding: 'utf-8', timeout: 30000, env: process.env });
+    res.json({ success: true, output: out.slice(0, 2000) });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// === 노드 댓글 API ===
+app.get('/api/workflows/:id/comments', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, node_id, author, text, created_at FROM wf_comments WHERE wf_id = $1 ORDER BY created_at ASC',
+      [req.params.id]
+    );
+    res.json({ success: true, comments: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.post('/api/workflows/:id/comments', requireAuth, async (req, res) => {
+  try {
+    const { node_id, author, text } = req.body || {};
+    if (!text) return res.status(400).json({ success: false, error: 'text required' });
+    const { rows } = await pool.query(
+      `INSERT INTO wf_comments (wf_id, node_id, author, text) VALUES ($1, $2, $3, $4) RETURNING id, created_at`,
+      [req.params.id, node_id || '', author || '익명', text]
+    );
+    res.json({ success: true, comment: rows[0] });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === 실행 결과 저장/조회 ===
+app.post('/api/workflows/:id/results', async (req, res) => {
+  try {
+    const { node_id, result, run_at } = req.body || {};
+    await pool.query(
+      `INSERT INTO wf_results (wf_id, node_id, result, run_at) VALUES ($1, $2, $3, $4)`,
+      [req.params.id, node_id || '', JSON.stringify(result || {}), run_at || new Date().toISOString()]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.get('/api/workflows/:id/results', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT node_id, result, run_at FROM wf_results WHERE wf_id = $1 ORDER BY run_at DESC LIMIT 50',
+      [req.params.id]
+    );
+    res.json({ success: true, results: rows });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
 // === 실행 통계 API ===
 app.get('/api/stats', async (req, res) => {
   try {

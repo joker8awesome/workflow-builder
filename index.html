@@ -46,7 +46,7 @@
       <ul id="wf-list"></ul>
     </aside>
     <main id="canvas-wrap">
-      <svg id="edges"></svg>
+      <svg id="edges"><defs><marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#8a8f98"/></marker></defs></svg>
       <div id="canvas"></div>
     </main>
     <aside id="inspector">
@@ -222,8 +222,66 @@ function startDrag(e, node) {
   window.addEventListener('mouseup', up);
 }
 
-// 임시 stub (Task 5/6에서 실제 구현)
-function renderEdges() {}
+// === EdgeLayer ===
+function renderEdges() {
+  const svg = document.getElementById('edges');
+  svg.innerHTML = '';
+  const wf = currentWorkflow();
+  if (!wf) return;
+  wf.edges.forEach(e => {
+    const from = wf.nodes.find(n => n.id === e.from);
+    const to = wf.nodes.find(n => n.id === e.to);
+    if (!from || !to) { console.warn('orphan edge', e.id); return; }
+    const x1 = from.x + 90, y1 = from.y + 26;
+    const x2 = to.x + 90, y2 = to.y + 26;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', '#8a8f98'); line.setAttribute('stroke-width', '2');
+    line.setAttribute('marker-end', 'url(#arrow)');
+    line.dataset.id = e.id;
+    line.style.cursor = 'pointer';
+    line.addEventListener('click', (ev) => { ev.stopPropagation(); selected = { type: 'edge', id: e.id }; renderAll(); });
+    svg.appendChild(line);
+    if (e.label) {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', (x1+x2)/2); t.setAttribute('y', (y1+y2)/2 - 6);
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '12');
+      t.setAttribute('fill', '#d29922'); t.setAttribute('font-weight', 'bold');
+      t.textContent = e.label;
+      svg.appendChild(t);
+    }
+  });
+}
+
+// 연결 드래그: 노드의 out 핸들에서 시작
+let connectFrom = null;
+document.addEventListener('mousedown', (e) => {
+  const port = e.target.closest('.nport');
+  if (!port) return;
+  e.preventDefault(); e.stopPropagation();
+  const fromId = port.closest('.node').dataset.id;
+  connectFrom = fromId;
+  function up(ev) {
+    const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.node');
+    if (target && target.dataset.id !== fromId) {
+      const wf = currentWorkflow();
+      const existing = wf.edges.filter(e2 => e2.from === fromId);
+      const isDecision = wf.nodes.find(n => n.id === fromId)?.type === 'decision';
+      const label = isDecision ? (existing.length === 0 ? 'Yes' : 'No') : '';
+      wf.edges.push({ id: 'e_' + Date.now().toString(36), from: fromId, to: target.dataset.id, label });
+      saveStore(); renderAll();
+    }
+    connectFrom = null;
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+  }
+  function move(ev) {}
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+});
+
+// 임시 stub (Task 6에서 실제 구현)
 function renderInspector() {}
 
 document.getElementById('canvas').addEventListener('click', () => {

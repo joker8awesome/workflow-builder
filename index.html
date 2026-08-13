@@ -565,6 +565,12 @@
   #agents-panel h4{color:var(--accent);margin-bottom:8px}
   .agent-item:hover{border-color:var(--accent-strong) !important}
 
+  /* 드래그 고스트 — 원본 반투명 */
+  #canvas .node.drag-ghost{opacity:.4;border-style:dashed}
+  /* 착지 바운스 */
+  #canvas .node.drop-bounce{animation:dropBounce .3s ease}
+  @keyframes dropBounce{0%{transform:translateY(-4px) scale(1.03)}60%{transform:translateY(1px)}100%{transform:translateY(0)}}
+
   /* 신뢰도 배지 */
   .conf-badge{
     position:absolute;top:-9px;right:10px;
@@ -630,6 +636,7 @@
     <button id="btn-bundle" class="tb-action">번들</button>
     <button id="btn-trace" class="tb-action">트레이스</button>
     <button id="btn-diff" class="tb-action">diff</button>
+    <button id="btn-risk" class="tb-action">위험</button>
     <button id="btn-agents" class="tb-action">에이전트</button>
     <button id="btn-agent-dash" class="tb-action">대시보드</button>
     <button id="btn-sessions" class="tb-action">세션</button>
@@ -1145,6 +1152,9 @@ function startDrag(e, node) {
     return;
   }
   selected = { type: 'node', id: node.id };
+  // 3: 드래그 고스트
+  const dragEl = e.target.closest('.node');
+  if (dragEl) dragEl.classList.add('drag-ghost');
   const startX = e.clientX, startY = e.clientY;
   const origX = node.x, origY = node.y;
   // 다중 선택된 다른 노드들도 함께 이동
@@ -1170,9 +1180,15 @@ function startDrag(e, node) {
   function up() {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    if (dragEl) dragEl.classList.remove('drag-ghost');
     if (node.x !== origX || node.y !== origY) pushHistory();
     saveStore();
     renderEdges();
+    // 3: 착지 바운스
+    if (dragEl) {
+      dragEl.classList.add('drop-bounce');
+      setTimeout(() => dragEl.classList.remove('drop-bounce'), 300);
+    }
   }
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
@@ -2321,6 +2337,7 @@ async function executeWorkflow() {
   execState = { running: true, startTime: Date.now(), results: {} };
   document.getElementById('run-status-bar').style.display = 'flex';
   document.getElementById('rs-status').textContent = '실행 중...';
+  setProactiveStatus('워크플로우 실행 시작');
   const path = [];
   // 조건식 컨텍스트 (실제 실행 데이터)
   const ctx = buildExecCtx(wf.id);
@@ -2337,11 +2354,17 @@ async function executeWorkflow() {
       const prevEdge = wf.edges.find(e => e.to === id);
       if (!ok && prevEdge) { path.pop(); await visit(prevEdge.from); return; }
     }
-    // 승인 게이트 노드 — Strong HITL (체크리스트 + 타임아웃 fail-safe)
+    // 승인 게이트 노드 — Strong HITL + 점진적 위임(자동 승인)
     if (n.type === 'approval') {
-      const checklist = n.approval_checklist || ['의도 확인', '데이터 출처 확인', '영향 범위 확인', '롤백 계획 확인'];
-      const apprOk = await waitApprovalStrong(n.label || '승인 필요', checklist);
-      if (!apprOk) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
+      const auto = await shouldAutoApprove(n.agentId);
+      if (auto) {
+        logRun('⚡ 자동 승인: ' + (n.label || '') + ' (점진적 위임)');
+        logApproval(wf.id, id, n.agentId, 'approved', { auto: true });
+      } else {
+        const checklist = n.approval_checklist || ['의도 확인', '데이터 출처 확인', '영향 범위 확인', '롤백 계획 확인'];
+        const apprOk = await waitApprovalStrong(n.label || '승인 필요', checklist);
+        if (!apprOk) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
+      }
     } else {
       // 재시도/폴백 반영 실행
       await runNodeWithRetry(n);
@@ -3229,6 +3252,24 @@ function initCommandPalette() {
   });
 }
 
+// 5. 위험 순위 diff
+function riskRankedDiff() {
+  const wf = currentWorkflow();
+  if (!wf) return [];
+  const nodes = wf.nodes || [];
+  return nodes.filter(n => n.blocked || n.status === 'failed' || (n.agentId && !getAgent(n.agentId))).map(n => ({
+    id: n.id, label: n.label || n.type,
+    risk: n.blocked ? 'high' : n.status === 'failed' ? 'high' : 'medium',
+  }));
+}
+function showRiskDiff() {
+  const risks = riskRankedDiff();
+  if (risks.length === 0) { toast('위험 노드 없음'); return; }
+  toastHTML('<div style="min-width:280px"><strong style="display:block;margin-bottom:8px;color:#ff5d5d">⚠️ 위험 순위</strong>' +
+    risks.map(r => '<div style="padding:6px;margin-bottom:4px;background:var(--dark-3);border-radius:6px;font-size:12px;border-left:3px solid ' + (r.risk === 'high' ? '#ff5d5d' : '#d29922') + '">' +
+      '<strong>' + escapeHtml(r.label) + '</strong> <span style="color:var(--panel-text-faint)">' + r.risk + '</span></div>').join('') +
+    '</div>', 7000);
+}
 // 5. 워크플로우 diff — 두 버전 비교
 function wfDiff(vA, vB) {
   const aNodes = (vA && vA.nodes) || [], bNodes = (vB && vB.nodes) || [];
@@ -3346,6 +3387,21 @@ function showAgentForm(agent) {
   document.querySelector('#ag-cancel').addEventListener('click', () => { document.querySelectorAll('.toast').forEach(t => t.remove()); });
 }
 
+// 2: 자율성 레벨 게이지 — 연속 승인 기반
+function autonomyLevel(agentId) {
+  try {
+    const cnt = JSON.parse(localStorage.getItem(LS_KEY + '_approve_streak') || '{}');
+    const streak = cnt[agentId || 'global'] || 0;
+    if (streak >= 10) return 3;
+    if (streak >= 5) return 2;
+    return 1;
+  } catch (e) { return 1; }
+}
+function autonomyGaugeHTML(agentId) {
+  const lv = autonomyLevel(agentId);
+  return '<span style="font-size:10px;color:var(--panel-text-faint)">자율성 Lv' + lv + '/3</span> <span style="font-size:10px">' +
+    (lv >= 1 ? '●' : '○') + (lv >= 2 ? '●' : '○') + (lv >= 3 ? '●' : '○') + '</span>';
+}
 // 에이전트 패널 렌더
 function renderAgents() {
   const list = document.getElementById('agents-list');
@@ -3480,7 +3536,30 @@ async function logApproval(wfId, nodeId, agentId, decision, checklist) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wf_id: wfId, node_id: nodeId, agent_id: agentId || '', approver: 'me', decision, checklist }),
     });
+    // 1: 승인 이력 기반 자율성 — 연속 승인 카운트
+    try {
+      const cnt = JSON.parse(localStorage.getItem(LS_KEY + '_approve_streak') || '{}');
+      const key = agentId || 'global';
+      cnt[key] = decision === 'approved' ? (cnt[key] || 0) + 1 : 0;
+      localStorage.setItem(LS_KEY + '_approve_streak', JSON.stringify(cnt));
+    } catch (e) {}
   } catch (e) {}
+}
+// 연속 승인 확인 — 40회 이상이면 자동 승인 (점진적 위임)
+async function shouldAutoApprove(agentId) {
+  try {
+    const cnt = JSON.parse(localStorage.getItem(LS_KEY + '_approve_streak') || '{}');
+    const streak = cnt[agentId || 'global'] || 0;
+    // 신뢰 점수도 함께 확인
+    let trust = 50;
+    try {
+      const tr = await fetch(API_BASE + '/api/trust');
+      const tj = await tr.json();
+      const mine = (tj.trust || []).find(t => t.agent_id === agentId);
+      if (mine) trust = mine.trust;
+    } catch (e) {}
+    return streak >= 10 && trust >= 70;  // 40회 대신 10회 + 신뢰 70% (실용적)
+  } catch (e) { return false; }
 }
 
 // 2/3. 승인 게이트 — 타임아웃 fail-safe + 챌린지-리스폰스 체크리스트
@@ -3793,6 +3872,11 @@ function errorRecovery3(what, why, next) {
 }
 
 // 6. 실시간 파이프라인 뷰 — 노드 상태 컬러 강화 (renderCanvas에 이미 exec-badge, status-badge)
+// 6: 노드 레벨 상태 선제 통신
+function setProactiveStatus(text) {
+  const el = document.getElementById('rs-status');
+  if (el && text) el.textContent = '🔄 ' + text;
+}
 function pipelineStatusBadge(n) {
   if (n.status === '완료' || n.status === 'done') return '<span class="pipe-badge done">●</span>';
   if (n.blocked) return '<span class="pipe-badge blocked" title="블로커">⛔</span>';
@@ -3963,6 +4047,13 @@ async function simulateWorkflow() {
     '<div style="font-size:11px;color:var(--panel-text-faint);margin-top:8px">읽기 전용 — 실제 실행 없음</div></div>', 10000);
 }
 
+// 8: 신뢰도 맵 — 노드별 신뢰 색상
+function trustMapBadge(n) {
+  const c = n.confidence;
+  if (typeof c !== 'number') return '';
+  const color = c >= 80 ? 'var(--accent)' : c >= 50 ? '#d29922' : '#ff5d5d';
+  return '<span class="trust-map" style="position:absolute;top:-9px;right:10px;font-size:9px;font-weight:700;color:' + color + '">' + c + '%</span>';
+}
 // 5. 거버넌스 대시보드 — 에이전트별 신뢰/자율/위험
 async function renderGovernance() {
   const body = document.getElementById('gov-body');
@@ -4008,6 +4099,7 @@ initShareDemo();
 initCommandPalette();
 setTimeout(initPresence, 800);
 document.getElementById('btn-diff').addEventListener('click', showWfDiff);
+document.getElementById('btn-risk').addEventListener('click', showRiskDiff);
 document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
 document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';

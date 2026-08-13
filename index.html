@@ -27,10 +27,19 @@
 #canvas .node.sel{border-color:#1f6feb;box-shadow:0 0 0 3px rgba(31,111,235,.15)}
 #canvas .node .nicon{width:26px;height:26px;border-radius:6px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
 #canvas .node .nlabel{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#canvas .node .nport{position:absolute;right:-8px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#1f6feb;border:2px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s;z-index:2}
+#canvas .node .nport{position:absolute;right:-4px;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:50%;background:#1f6feb;border:3px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s;z-index:5;pointer-events:auto}
 #canvas .node:hover .nport{opacity:1}
 #edges{position:absolute;inset:0;pointer-events:none;z-index:0}
 #edges line{pointer-events:stroke}
+#inspector h3{font-size:14px;padding:14px 16px 8px;border-bottom:1px solid #eee}
+#inspector-body{padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+#inspector label{font-size:12px;color:#666;margin-top:6px}
+#inspector input,#inspector textarea{width:100%;padding:8px;border:1px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit}
+#inspector button{margin-top:12px;padding:9px;border:none;border-radius:8px;cursor:pointer;font-size:13px}
+#f-del-node,#f-del-edge{background:#fde8e8;color:#c81e1e}
+#ctx-menu{position:fixed;display:none;z-index:50;background:#fff;border:1px solid #ddd;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);padding:6px}
+#ctx-menu button{display:block;width:100%;text-align:left;padding:8px 14px;border:none;background:none;cursor:pointer;font-size:13px;border-radius:6px}
+#ctx-menu button:hover{background:#f0f1f3}
 </style>
 </head>
 <body>
@@ -40,6 +49,7 @@
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
   </header>
+  <div id="ctx-menu"></div>
   <div id="app">
     <aside id="sidebar">
       <button id="add-wf">+ 새 워크플로우</button>
@@ -281,8 +291,84 @@ document.addEventListener('mousedown', (e) => {
   window.addEventListener('mouseup', up);
 });
 
-// 임시 stub (Task 6에서 실제 구현)
-function renderInspector() {}
+// === Inspector ===
+function renderInspector() {
+  const body = document.getElementById('inspector-body');
+  body.innerHTML = '';
+  const wf = currentWorkflow();
+  if (!wf) { body.innerHTML = '<p>워크플로우 없음</p>'; return; }
+  if (selected.type === 'node') {
+    const n = wf.nodes.find(x => x.id === selected.id);
+    if (!n) return;
+    body.innerHTML = `
+      <label>이름</label><input id="f-label" value="${escapeHtml(n.label)}">
+      <label>설명</label><textarea id="f-desc">${escapeHtml(n.desc)}</textarea>
+      <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
+      <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
+      <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
+      <button id="f-del-node">노드 삭제</button>`;
+    ['label','desc','assignee','due'].forEach(k => {
+      document.getElementById('f-' + k).addEventListener('input', (e) => { n[k] = e.target.value; saveStore(); });
+    });
+    document.getElementById('f-tags').addEventListener('input', (e) => {
+      n.tags = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+      saveStore();
+    });
+    document.getElementById('f-del-node').addEventListener('click', () => {
+      wf.nodes = wf.nodes.filter(x => x.id !== n.id);
+      wf.edges = wf.edges.filter(x => x.from !== n.id && x.to !== n.id);
+      selected = { type: null, id: null };
+      saveStore(true); renderAll();
+    });
+  } else if (selected.type === 'edge') {
+    const e = wf.edges.find(x => x.id === selected.id);
+    if (!e) return;
+    body.innerHTML = `<label>라벨 (분기)</label><input id="f-ec-label" value="${escapeHtml(e.label||'')}">
+      <button id="f-del-edge">연결 삭제</button>`;
+    document.getElementById('f-ec-label').addEventListener('input', (ev) => { e.label = ev.target.value; saveStore(); renderEdges(); });
+    document.getElementById('f-del-edge').addEventListener('click', () => {
+      wf.edges = wf.edges.filter(x => x.id !== e.id);
+      selected = { type: null, id: null };
+      saveStore(true); renderAll();
+    });
+  } else {
+    body.innerHTML = `<label>워크플로우 이름</label><input id="f-wf-name" value="${escapeHtml(wf.name)}">`;
+    document.getElementById('f-wf-name').addEventListener('input', (e) => {
+      wf.name = e.target.value;
+      document.getElementById('wf-name').value = wf.name;
+      renderSidebar(); saveStore();
+    });
+  }
+}
+
+// === 컨텍스트 메뉴 (노드 추가) ===
+const ctxMenu = document.getElementById('ctx-menu');
+const canvasEl = document.getElementById('canvas');
+canvasEl.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (e.target.closest('.node')) return;
+  ctxMenu.style.display = 'block';
+  ctxMenu.style.left = e.clientX + 'px';
+  ctxMenu.style.top = e.clientY + 'px';
+  ctxMenu.dataset.x = e.offsetX;
+  ctxMenu.dataset.y = e.offsetY;
+});
+document.addEventListener('click', () => ctxMenu.style.display = 'none');
+Object.keys(NODE_TYPES).forEach(t => {
+  const btn = document.createElement('button');
+  btn.textContent = NODE_TYPES[t].icon + ' ' + NODE_TYPES[t].label;
+  btn.addEventListener('click', () => {
+    const wf = currentWorkflow();
+    wf.nodes.push({
+      id: 'n_' + Date.now().toString(36), type: t,
+      x: +ctxMenu.dataset.x - 80, y: +ctxMenu.dataset.y - 20,
+      label: NODE_TYPES[t].label, desc: '', assignee: '', due: '', tags: []
+    });
+    ctxMenu.style.display = 'none';
+    saveStore(); renderAll();
+  });
+  ctxMenu.appendChild(btn);
+});
 
 document.getElementById('canvas').addEventListener('click', () => {
   selected = { type: null, id: null };

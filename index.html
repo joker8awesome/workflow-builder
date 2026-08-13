@@ -48,6 +48,7 @@
     <strong>워크플로우 빌더</strong>
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
+    <span id="sync-status" style="font-size:12px;color:#888"></span>
     <button id="btn-export" style="margin-left:auto;padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">내보내기</button>
     <button id="btn-import" style="padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">가져오기</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
@@ -73,6 +74,73 @@
 const LS_KEY = 'wf_app_' + (location.pathname.split('/').filter(Boolean).join('_') || 'root');
 // 백업 키 (JSON 파손 대비)
 const LS_BACKUP_KEY = LS_KEY + '_backup';
+
+// === 서버 연동 (옵션) ===
+// 서버가 있으면(localhost:3737 등) 자동 사용, 없으면 localStorage만으로 동작
+const API_BASE = (window.__WF_API__ || 'http://localhost:3737');
+let serverOnline = false;
+let syncTimer = null;
+
+async function checkServer() {
+  try {
+    const r = await fetch(API_BASE + '/api/workflows', { signal: AbortSignal.timeout(2500) });
+    serverOnline = r.ok;
+  } catch (e) { serverOnline = false; }
+  updateSyncStatus();
+  return serverOnline;
+}
+
+function updateSyncStatus() {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  el.textContent = serverOnline ? '서버 연결됨' : '로컬 저장';
+  el.style.color = serverOnline ? '#1a7f37' : '#888';
+}
+
+// 서버에서 전체 워크플로우 로드 (성공 시 store 대체)
+async function loadFromServer() {
+  if (!(await checkServer())) return false;
+  try {
+    const r = await fetch(API_BASE + '/api/workflows');
+    const j = await r.json();
+    if (!j.success) return false;
+    const list = j.workflows || [];
+    if (list.length === 0) return false;
+    const loaded = [];
+    for (const item of list) {
+      const d = await (await fetch(API_BASE + '/api/workflows/' + item.id)).json();
+      if (d.success && d.workflow) {
+        const wf = d.workflow.data || {};
+        if (Array.isArray(wf.nodes) && Array.isArray(wf.edges)) {
+          loaded.push({ id: d.workflow.id, name: d.workflow.name, nodes: wf.nodes, edges: wf.edges });
+        }
+      }
+    }
+    if (loaded.length > 0) {
+      store.workflows = loaded;
+      store.activeWorkflowId = loaded[0].id;
+      return true;
+    }
+  } catch (e) { console.warn('server load failed', e); }
+  return false;
+}
+
+// 서버에 전체 워크플로우 동기화 (디바운스)
+function syncToServer() {
+  if (!serverOnline) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      for (const wf of store.workflows) {
+        await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: wf.name, data: { nodes: wf.nodes, edges: wf.edges } }),
+        });
+      }
+    } catch (e) { console.warn('server sync failed', e); }
+  }, 800);
+}
 let store = { workflows: [], activeWorkflowId: null };
 let saveTimer = null;
 
@@ -137,8 +205,9 @@ function saveStore(immediate) {
       if (el) el.textContent = '⚠ 저장 실패 (localStorage 불가)';
     }
   };
-  if (immediate) write();
+  if (immediate) { write(); }
   else saveTimer = setTimeout(write, 500);
+  syncToServer();
 }
 
 function currentWorkflow() {
@@ -482,6 +551,16 @@ loadStore();
 const wf0 = currentWorkflow();
 if (wf0) document.getElementById('wf-name').value = wf0.name;
 renderAll();
+// 서버 연동 — 서버에 데이터가 있으면 로드, 없으면 로컬 유지
+(async () => {
+  const loaded = await loadFromServer();
+  if (loaded) {
+    const wf1 = currentWorkflow();
+    if (wf1) document.getElementById('wf-name').value = wf1.name;
+    renderAll();
+    saveStore(true);
+  }
+})();
 </script>
 </body>
 </html>

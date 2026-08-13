@@ -10,31 +10,43 @@
 
 @layer tokens {
   :root {
-    /* oklch 색상 공간 — 더 넓은 색 영역 */
-    --bg: oklch(0.965 0.005 260);
-    --surface: oklch(1 0 0);
-    --surface-2: oklch(0.98 0.004 260);
-    --border: oklch(0.92 0.006 260);
-    --border-strong: oklch(0.85 0.01 260);
-    --text: oklch(0.22 0.02 260);
-    --text-dim: oklch(0.5 0.015 260);
-    --text-faint: oklch(0.62 0.015 260);
-    /* 브랜드 색상 */
-    --accent: oklch(0.55 0.19 255);      /* 파랑 */
-    --accent-soft: color-mix(in oklch, var(--accent) 12%, white);
-    --danger: oklch(0.58 0.2 25);
-    --danger-soft: color-mix(in oklch, var(--danger) 10%, white);
-    /* 노드 타입별 */
-    --n-start: oklch(0.62 0.17 155);
-    --n-process: oklch(0.55 0.19 255);
-    --n-decision: oklch(0.7 0.15 75);
-    --n-end: oklch(0.58 0.2 25);
-    /* 크기 토큰 */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --shadow-sm: 0 1px 3px color-mix(in oklch, black 8%, transparent);
-    --shadow-md: 0 4px 16px color-mix(in oklch, black 12%, transparent);
+    /* ── 강조색: #00ff87 민트 그린 ── */
+    --accent: #00ff87;
+    --accent-strong: #00d46f;
+    --accent-soft: rgba(0,255,135,.14);
+    --accent-glow: rgba(0,255,135,.35);
+
+    /* ── 다크 / 화이트 교차 팔레트 ── */
+    --dark: #0a0d10;
+    --dark-2: #12161b;
+    --dark-3: #1a2027;
+    --dark-border: #232a33;
+    --light: #f7f8fa;
+    --light-2: #ffffff;
+    --light-border: #e2e5ea;
+
+    /* 전면 다크: 모든 패널 + 캔버스 통일 */
+    --panel-bg: var(--dark);
+    --panel-bg-2: var(--dark-2);
+    --panel-border: var(--dark-border);
+    --panel-text: #e8eaed;
+    --panel-text-dim: #9aa3ad;
+    --panel-text-faint: #6b7681;
+
+    --canvas-bg: var(--dark);
+    --canvas-grid: color-mix(in srgb, var(--accent) 7%, transparent);
+
+    /* 노드 (다크 캔버스 위 = 다크 카드) */
+    --node-bg: var(--dark-2);
+    --node-border: var(--dark-border);
+    --node-text: #e8eaed;
+
+    /* 공용 */
+    --danger: #ff5d5d;
+    --danger-soft: rgba(255,93,93,.12);
+    --radius-sm: 8px; --radius-md: 12px; --radius-lg: 16px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.1);
+    --shadow-md: 0 6px 24px rgba(0,0,0,.28);
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
     --topbar-h: 52px; --sidebar-w: 240px; --inspector-w: 280px;
     --font: system-ui, 'Pretendard', -apple-system, sans-serif;
@@ -49,42 +61,42 @@
 @layer layout {
   body{
     font-family:var(--font);
-    background:var(--bg);
-    color:var(--text);
-    height:100dvh;               /* 동적 뷰포트 — 모바일 주소창 대응 */
+    background:var(--dark);
+    color:var(--panel-text);
+    height:100dvh;
     display:flex;flex-direction:column;overflow:hidden;
     scrollbar-gutter:stable;
   }
   #topbar{
     height:var(--topbar-h);
-    background:var(--surface);
-    border-block-end:1px solid var(--border);
+    background:var(--panel-bg);
+    border-block-end:1px solid var(--panel-border);
     display:flex;align-items:center;
-    padding-inline:var(--space-4);  /* logical property */
+    padding-inline:var(--space-4);
     gap:var(--space-3);flex-shrink:0;
     position:relative;z-index:20;
-    backdrop-filter:blur(12px);    /* 유리 효과 */
-    background:color-mix(in oklch, var(--surface) 85%, transparent);
+    backdrop-filter:blur(12px);
+    background:color-mix(in srgb, var(--panel-bg) 88%, transparent);
   }
   #app{flex:1;display:flex;min-height:0}
   #sidebar{
     width:var(--sidebar-w);
-    background:var(--surface);
-    border-inline-end:1px solid var(--border);
+    background:var(--panel-bg-2);
+    border-inline-end:1px solid var(--panel-border);
     flex-shrink:0;display:flex;flex-direction:column;
   }
   #canvas-wrap{
     flex:1;position:relative;overflow:hidden;
     background:
-      radial-gradient(circle at 20% 30%, color-mix(in oklch, var(--accent) 4%, transparent), transparent 40%),
-      var(--bg);
-    container-type:inline-size;   /* Container Query 앵커 */
+      radial-gradient(circle at 20% 30%, var(--canvas-grid), transparent 45%),
+      var(--canvas-bg);
+    container-type:inline-size;
   }
   #canvas{position:absolute;inset:0}
   #inspector{
     width:var(--inspector-w);
-    background:var(--surface);
-    border-inline-start:1px solid var(--border);
+    background:var(--panel-bg-2);
+    border-inline-start:1px solid var(--panel-border);
     flex-shrink:0;overflow-y:auto;
   }
 }
@@ -97,71 +109,80 @@
     padding:var(--space-2) var(--space-3);
     border-radius:var(--radius-sm);
     cursor:pointer;font-size:14px;margin-block-end:var(--space-1);
-    transition:background .15s ease, translate .15s ease;
+    color:var(--panel-text-dim);
+    transition:background .15s ease, color .15s ease;
   }
-  #wf-list li:hover{background:var(--surface-2)}
+  #wf-list li:hover{background:var(--dark-3);color:var(--panel-text)}
   #wf-list li.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
-  #wf-list .wf-del{border:none;background:none;font-size:16px;color:var(--text-faint);cursor:pointer;padding-inline:var(--space-1)}
+  #wf-list .wf-del{border:none;background:none;font-size:16px;color:var(--panel-text-faint);cursor:pointer;padding-inline:var(--space-1)}
   #wf-list .wf-del:hover{color:var(--danger)}
   #add-wf{
     margin:var(--space-2) var(--space-3);
     padding:var(--space-3);
-    border:1px dashed var(--border-strong);
+    border:1px dashed var(--dark-border);
     border-radius:var(--radius-md);
     background:none;cursor:pointer;font-size:14px;
-    transition:border-color .15s, background .15s;
+    color:var(--panel-text-dim);
+    transition:border-color .15s, background .15s, color .15s;
   }
-  #add-wf:hover{border-color:var(--accent);background:var(--accent-soft)}
+  #add-wf:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 
-  /* 노드 — 개별 translate 속성 + :has() */
+  /* 노드 — 라이트 표면 (다크 캔버스 대비 아님, 라이트 캔버스 위) */
   #canvas .node{
     position:absolute;min-width:160px;padding:10px 14px;
-    background:var(--surface);
-    border:2px solid var(--border);
+    background:var(--node-bg);
+    border:2px solid var(--node-border);
     border-radius:var(--radius-md);
     cursor:grab;user-select:none;
     display:flex;align-items:center;gap:var(--space-2);
     box-shadow:var(--shadow-sm);
     z-index:1;
-    transition:border-color .15s ease, box-shadow .15s ease;
+    color:var(--node-text);
+    transition:border-color .15s ease, box-shadow .15s ease, background .15s;
   }
-  #canvas .node:hover{border-color:var(--border-strong)}
-  #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-  /* :has() — 드래그 중(노드 내부 포트 활성)인 부모 강조 */
-  #canvas .node:has(.nport:active){border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  #canvas .node:hover{background:var(--dark-3)}
+  #canvas .node:hover{border-color:color-mix(in srgb, var(--accent) 60%, var(--node-border))}
+  #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow)}
+  #canvas .node:has(.nport:active){border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow)}
   #canvas .node .nicon{
     width:26px;height:26px;border-radius:var(--radius-sm);
     color:#fff;display:flex;align-items:center;justify-content:center;
-    font-size:14px;flex-shrink:0;
-    aspect-ratio:1;             /* 정사각형 보장 */
+    font-size:14px;flex-shrink:0;aspect-ratio:1;
   }
   #canvas .node .nlabel{
     font-size:14px;font-weight:600;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    text-wrap:balance;           /* 최신 텍스트 균형 */
+    text-wrap:balance;
   }
   #canvas .node .nport{
     position:absolute;inset-inline-end:-4px;top:50%;translate:0 -50%;
     width:18px;height:18px;border-radius:50%;
-    background:var(--accent);border:3px solid var(--surface);
+    background:var(--accent);
+    border:3px solid var(--node-bg);
     cursor:crosshair;opacity:0;transition:opacity .15s, scale .15s;
     z-index:5;pointer-events:auto;
+    box-shadow:0 0 10px var(--accent-glow);
   }
+  #canvas .node .nport:hover{scale:1.3;background:var(--accent-strong)}
   #canvas .node:hover .nport{opacity:1}
-  #canvas .node .nport:hover{scale:1.3}   /* 개별 scale 속성 */
+  #canvas .node .nport:hover{scale:1.3}
 
-  /* 엣지 */
+  /* 엣지 — 다크 캔버스에서 가시성 개선 */
   #edges{position:absolute;inset:0;pointer-events:none;z-index:0}
-  #edges line{pointer-events:stroke}
+  #edges line{pointer-events:stroke;stroke:#7d8fa1 !important;stroke-width:2.5}
+  #edges text{fill:var(--accent) !important}
 
   /* 인스펙터 */
-  #inspector h3{font-size:14px;padding:14px var(--space-4) var(--space-2);border-block-end:1px solid var(--border)}
+  #inspector h3{font-size:14px;padding:14px var(--space-4) var(--space-2);border-block-end:1px solid var(--panel-border);color:var(--panel-text)}
   #inspector-body{padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)}
-  #inspector label{font-size:12px;color:var(--text-dim);margin-block-start:var(--space-2)}
+  #inspector label{font-size:12px;color:var(--panel-text-dim);margin-block-start:var(--space-2)}
   #inspector input,#inspector textarea{
     width:100%;padding:var(--space-2);
-    border:1px solid var(--border);border-radius:var(--radius-sm);
+    background:var(--dark-3);
+    border:1px solid var(--dark-border);
+    border-radius:var(--radius-sm);
     font-size:13px;font-family:inherit;
+    color:var(--panel-text);
     transition:border-color .15s, box-shadow .15s;
   }
   #inspector input:focus-visible,#inspector textarea:focus-visible{
@@ -173,42 +194,66 @@
   /* 컨텍스트 메뉴 */
   #ctx-menu{
     position:fixed;display:none;z-index:50;
-    background:var(--surface);
-    border:1px solid var(--border);
+    background:var(--dark-2);
+    border:1px solid var(--dark-border);
     border-radius:var(--radius-md);
     box-shadow:var(--shadow-md);
     padding:var(--space-1);
     backdrop-filter:blur(8px);
-    background:color-mix(in oklch, var(--surface) 92%, transparent);
+    background:color-mix(in srgb, var(--dark-2) 92%, transparent);
   }
   #ctx-menu button{
     display:block;width:100%;text-align:left;
     padding:var(--space-2) var(--space-3);
     border:none;background:none;cursor:pointer;font-size:13px;border-radius:var(--radius-sm);
-    transition:background .12s;
+    color:var(--panel-text);
+    transition:background .12s, color .12s;
   }
-  #ctx-menu button:hover{background:var(--surface-2)}
+  #ctx-menu button:hover{background:var(--dark-3);color:var(--accent)}
 }
 
 @layer utilities {
-  /* 상단바 버튼 공용 */
   #topbar button{
-    padding:7px 14px;border:1px solid var(--border);
-    border-radius:var(--radius-sm);background:var(--surface);
+    padding:7px 14px;
+    background:transparent;
+    border:1px solid var(--dark-border);
+    border-radius:var(--radius-sm);
+    color:var(--panel-text);
     cursor:pointer;font-size:13px;
-    transition:border-color .15s, background .15s, translate .15s;
+    transition:border-color .15s, background .15s, color .15s, translate .15s;
   }
-  #topbar button:hover{border-color:var(--accent);background:var(--accent-soft)}
+  #topbar button:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+  /* 우상단 내보내기/가져오기 — #00ff87 강조 버튼 */
+  #topbar button.tb-action{
+    background:var(--accent);
+    border:1px solid var(--accent);
+    color:#04100a;
+    font-weight:700;
+    box-shadow:0 0 12px var(--accent-glow);
+  }
+  #topbar button.tb-action:hover{
+    background:var(--accent-strong);
+    border-color:var(--accent-strong);
+    color:#04100a;
+    box-shadow:0 0 18px var(--accent-glow);
+  }
   #topbar button:active{translate:0 1px}
   #topbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-  /* Container Query — 인스펙터/사이드바가 좁아지면 폭 자동 조절 */
+  #topbar input#wf-name{
+    background:var(--dark-2);
+    border:1px solid var(--dark-border);
+    border-radius:var(--radius-sm);
+    color:var(--panel-text);
+    padding:7px 12px;font-size:13px;
+  }
+  #topbar input#wf-name:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+
   @container (max-width: 480px){
     #canvas .node{min-width:130px;padding:8px 10px}
     #canvas .node .nlabel{font-size:12px}
   }
 
-  /* 반응형 — 미디어 쿼리 유지 (모바일 토글) */
   @media(max-width:900px){
     #sidebar{position:absolute;z-index:10;height:100%;translate:-100% 0;transition:translate .2s ease}
     #sidebar.open{translate:0 0}
@@ -218,7 +263,13 @@
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
   }
+  /* 다크 스크롤바 */
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--dark-border);border-radius:5px}
+  ::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb, var(--accent) 40%, var(--dark-border))}
 }
+
 </style>
 </head>
 <body>
@@ -228,8 +279,8 @@
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
     <span id="sync-status" style="font-size:12px;color:#888"></span>
-    <button id="btn-export" style="margin-left:auto;padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">내보내기</button>
-    <button id="btn-import" style="padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">가져오기</button>
+    <button id="btn-export" class="tb-action" style="margin-left:auto">내보내기</button>
+    <button id="btn-import" class="tb-action">가져오기</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>

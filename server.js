@@ -460,6 +460,59 @@ app.delete('/api/agents/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 승인 감사 API (Strong HITL) ===
+app.post('/api/approvals', async (req, res) => {
+  try {
+    const { wf_id, node_id, agent_id, approver, decision, checklist, context } = req.body || {};
+    if (!wf_id) return res.status(400).json({ success: false, error: 'wf_id required' });
+    const { rows } = await pool.query(
+      `INSERT INTO wf_approvals (wf_id, node_id, agent_id, approver, decision, checklist, context, decided_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, now()) RETURNING id`,
+      [wf_id, node_id || '', agent_id || '', approver || 'system', decision || 'pending',
+       JSON.stringify(checklist || {}), context || '']
+    );
+    res.json({ success: true, id: rows[0].id });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/approvals', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM wf_approvals ORDER BY created_at DESC LIMIT 100');
+    res.json({ success: true, approvals: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 에이전트 지식 메모리 API (MCP 스타일 공유) ===
+app.post('/api/knowledge', async (req, res) => {
+  try {
+    const { agent_id, wf_id, note, tags } = req.body || {};
+    if (!note) return res.status(400).json({ success: false, error: 'note required' });
+    const { rows } = await pool.query(
+      `INSERT INTO wf_knowledge (agent_id, wf_id, note, tags) VALUES ($1,$2,$3,$4) RETURNING id`,
+      [agent_id || '', wf_id || '', note, JSON.stringify(tags || [])]
+    );
+    res.json({ success: true, id: rows[0].id });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/knowledge', async (req, res) => {
+  try {
+    const { agent } = req.query || {};
+    const { rows } = agent
+      ? await pool.query('SELECT * FROM wf_knowledge WHERE agent_id = $1 ORDER BY created_at DESC LIMIT 50', [agent])
+      : await pool.query('SELECT * FROM wf_knowledge ORDER BY created_at DESC LIMIT 100');
+    res.json({ success: true, knowledge: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 에이전트 성과 메트릭 API ===
+app.get('/api/agent-metrics', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT wf_id, run_path, run_at FROM wf_runlogs ORDER BY run_at DESC LIMIT 500
+    `);
+    res.json({ success: true, runs: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

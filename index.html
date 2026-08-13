@@ -604,6 +604,7 @@
       <button id="agent-dash-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
     </div>
     <div id="agent-dash-body" style="font-size:13px;color:var(--panel-text)"></div>
+    <button id="agent-knowledge-btn" class="tb-action" style="width:100%;margin-top:10px">🧠 지식 기록</button>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -1072,6 +1073,7 @@ function renderInspector() {
       ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
+      ${n.type === 'approval' ? '<label>승인 체크리스트 (콤마 구분)</label><input id="f-acl" value="' + escapeHtml((n.approval_checklist || []).join(', ')) + '" placeholder="의도, 출처, 영향, 롤백">' : ''}
       <label>작업 상태</label>
       <select id="f-status" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
         ${WORK_STATUS.map(s => '<option' + (n.status === s ? ' selected' : '') + '>' + s + '</option>').join('')}
@@ -1107,6 +1109,11 @@ function renderInspector() {
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
     document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });
     document.getElementById('f-status').addEventListener('change', (e) => { n.status = e.target.value; saveStore(); renderCanvas(); renderAgentDashboard(); });
+    const fAcl = document.getElementById('f-acl');
+    if (fAcl) fAcl.addEventListener('input', (e) => {
+      n.approval_checklist = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+      saveStore();
+    });
     document.getElementById('f-handoff').addEventListener('input', (e) => { n.handoff_msg = e.target.value; saveStore(); });
     document.getElementById('f-blocked').addEventListener('change', (e) => { n.blocked = e.target.checked; saveStore(); renderCanvas(); renderAgentDashboard(); });
     document.getElementById('f-color').addEventListener('input', (e) => { n.color = e.target.value; saveStore(); renderCanvas(); });
@@ -2041,9 +2048,10 @@ async function executeWorkflow() {
     const n = wf.nodes.find(x => x.id === id);
     if (!n || path.includes(n)) return;
     path.push(n);
-    // 승인 게이트 노드
+    // 승인 게이트 노드 — Strong HITL (체크리스트 + 타임아웃 fail-safe)
     if (n.type === 'approval') {
-      const ok = await waitApproval(n.label || '승인 필요');
+      const checklist = n.approval_checklist || ['의도 확인', '데이터 출처 확인', '영향 범위 확인', '롤백 계획 확인'];
+      const ok = await waitApprovalStrong(n.label || '승인 필요', checklist);
       if (!ok) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
     } else {
       // 재시도/폴백 반영 실행
@@ -2079,6 +2087,7 @@ async function executeWorkflow() {
   const summary = path.map(n => n.label).join(' → ');
   toast('실행 완료: ' + summary);
   logRun(summary);
+  computeAgentMetrics().then(() => { if (document.getElementById('agent-dash').style.display === 'block') renderAgentMetrics(); });
 }
 
 // ── 2. 협업 상태 전파 (WebSocket → 실제 적용) ──
@@ -3048,6 +3057,125 @@ function renderAgentDashboard() {
     (conflicts.length ? '<div style="margin-top:10px;padding:8px;background:rgba(255,93,93,.1);border-radius:8px;font-size:11px;color:#ff5d5d">⚠ 워크스페이스 충돌: ' + escapeHtml(conflicts.join(' / ')) + '</div>' : '');
 }
 
+// ═══ Strong HITL + 평가 + 지식 모듈 ═══
+
+// 1. 승인 감사 기록
+async function logApproval(wfId, nodeId, agentId, decision, checklist) {
+  if (!serverOnline) return;
+  try {
+    await fetch(API_BASE + '/api/approvals', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_id: wfId, node_id: nodeId, agent_id: agentId || '', approver: 'me', decision, checklist }),
+    });
+  } catch (e) {}
+}
+
+// 2/3. 승인 게이트 — 타임아웃 fail-safe + 챌린지-리스폰스 체크리스트
+function waitApprovalStrong(text, checklistItems) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('approval-overlay');
+    const txt = document.getElementById('approval-text');
+    overlay.style.display = 'flex';
+    overlay.style.alignItems = 'center';
+    // 체크리스트 렌더
+    txt.innerHTML = '<strong>' + escapeHtml(text) + '</strong>' +
+      (checklistItems && checklistItems.length ? '<div style="margin-top:8px;font-size:12px">' +
+        checklistItems.map((c, i) => '<label style="display:block;margin:4px 0"><input type="checkbox" id="chk-' + i + '"> ' + escapeHtml(c) + '</label>').join('') +
+        '</div>' : '');
+    let settled = false;
+    const finish = (decision) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      overlay.style.display = 'none';
+      // 감사 기록
+      const wf = currentWorkflow();
+      if (wf) logApproval(wf.id, '', '', decision, { text, decided: decision });
+      resolve(decision);
+    };
+    // 4. 승인 타임아웃 — 5분 후 fail-safe 거부
+    const timer = setTimeout(() => { finish(false); toast('⏰ 승인 타임아웃 — 자동 반려'); }, 300000);
+    document.getElementById('approval-yes').onclick = () => {
+      // 챌린지-리스폰스: 체크리스트가 있으면 전부 체크 필요
+      if (checklistItems && checklistItems.length) {
+        const allChecked = checklistItems.every((_, i) => document.getElementById('chk-' + i).checked);
+        if (!allChecked) { toast('체크리스트를 모두 확인하세요'); return; }
+      }
+      finish(true);
+    };
+    document.getElementById('approval-no').onclick = () => finish(false);
+  });
+}
+
+// 5. 에이전트 성과 메트릭
+let agentMetricsCache = null;
+async function computeAgentMetrics() {
+  const metrics = {};
+  agents.forEach(a => { metrics[a.id] = { runs: 0, completed: 0, failed: 0, ms: [] }; });
+  // 로컬 실행 로그 기준
+  runLogs.forEach(l => {
+    const agentName = (l.path.match(/^\[([^\]]+)\]/) || [])[1];
+    if (!agentName) return;
+    const a = agents.find(x => x.name === agentName);
+    if (!a) return;
+    metrics[a.id].runs++;
+    if (l.path.includes('완료') || l.path.includes('→')) metrics[a.id].completed++;
+  });
+  agentMetricsCache = metrics;
+  return metrics;
+}
+function renderAgentMetrics() {
+  const body = document.getElementById('agent-dash-body');
+  if (!body) return;
+  const wf = currentWorkflow();
+  const nodes = (wf && wf.nodes) || [];
+  const blocks = agents.map(a => {
+    const mine = nodes.filter(n => n.agentId === a.id);
+    const done = mine.filter(n => n.status === '완료').length;
+    const blocked = mine.filter(n => n.blocked).length;
+    const m = (agentMetricsCache && agentMetricsCache[a.id]) || { runs: 0, completed: 0 };
+    const rate = m.runs > 0 ? Math.round(m.completed / m.runs * 100) : '-';
+    // 6. 성공률 하락 경고 (50% 미만)
+    const warn = typeof rate === 'number' && rate < 50 ? ' <span style="color:#ff5d5d">⚠ 성공률 ' + rate + '%</span>' : (typeof rate === 'number' ? ' 성공률 ' + rate + '%' : '');
+    return '<div style="padding:10px;margin-bottom:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(a.color) + '"></span>' +
+      '<strong>' + escapeHtml(a.name) + '</strong>' + (blocked ? ' <span style="color:#ff5d5d">⛔</span>' : '') + '</div>' +
+      '<div style="font-size:11px;color:var(--panel-text-dim);margin-top:4px">담당 ' + mine.length + ' · 완료 ' + done + ' · 실행 ' + m.runs + warn + '</div>' +
+      '</div>';
+  }).join('');
+  const conflicts = detectWorkspaceConflict();
+  body.innerHTML = (agents.length === 0 ? '<span style="color:var(--panel-text-faint)">에이전트 없음</span>' : blocks) +
+    (conflicts.length ? '<div style="margin-top:10px;padding:8px;background:rgba(255,93,93,.1);border-radius:8px;font-size:11px;color:#ff5d5d">⚠ 워크스페이스 충돌: ' + escapeHtml(conflicts.join(' / ')) + '</div>' : '');
+}
+
+// 7. 에이전트 지식 메모리
+async function addKnowledge(agentId, note, tags) {
+  if (!serverOnline) { toast('서버 미연결'); return; }
+  try {
+    await fetch(API_BASE + '/api/knowledge', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent_id: agentId, wf_id: currentWorkflow()?.id, note, tags }),
+    });
+    toast('지식 저장됨');
+  } catch (e) { toast('지식 저장 실패'); }
+}
+function showKnowledgeForm() {
+  const opts = agents.map(a => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + '</option>').join('');
+  toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">에이전트 지식 기록</strong>' +
+    '<select id="kn-agent" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)">' + opts + '</select>' +
+    '<input id="kn-note" placeholder="배운 점/메모" style="width:100%;padding:8px;margin-bottom:6px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<input id="kn-tags" placeholder="태그 (콤마)" style="width:100%;padding:8px;margin-bottom:10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text)"><br>' +
+    '<button id="kn-save" class="tb-action" style="width:100%">저장</button></div>', 60000);
+  document.querySelector('#kn-save').addEventListener('click', () => {
+    const agentId = document.querySelector('#kn-agent').value;
+    const note = document.querySelector('#kn-note').value.trim();
+    const tags = document.querySelector('#kn-tags').value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!note) { toast('메모 필요'); return; }
+    addKnowledge(agentId, note, tags);
+    document.querySelectorAll('.toast').forEach(t => t.remove());
+  });
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3079,11 +3207,12 @@ document.getElementById('agents-close').addEventListener('click', () => {
 document.getElementById('agent-add').addEventListener('click', () => showAgentForm(null));
 document.getElementById('btn-agent-dash').addEventListener('click', () => {
   document.getElementById('agent-dash').style.display = 'block';
-  renderAgentDashboard();
+  computeAgentMetrics().then(renderAgentMetrics);
 });
 document.getElementById('agent-dash-close').addEventListener('click', () => {
   document.getElementById('agent-dash').style.display = 'none';
 });
+document.getElementById('agent-knowledge-btn').addEventListener('click', showKnowledgeForm);
 loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;

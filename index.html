@@ -22,6 +22,15 @@
 #wf-list .wf-del:hover{color:#d33}
 #add-wf{margin:10px;padding:10px;border:1px dashed #bbb;border-radius:8px;background:none;cursor:pointer;font-size:14px}
 #add-wf:hover{background:#f0f1f3}
+#canvas .node{position:absolute;min-width:160px;padding:10px 14px;background:#fff;border:2px solid #ddd;border-radius:12px;cursor:grab;user-select:none;display:flex;align-items:center;gap:8px;box-shadow:0 1px 3px rgba(0,0,0,.08);z-index:1}
+#canvas .node:hover{border-color:#aaa}
+#canvas .node.sel{border-color:#1f6feb;box-shadow:0 0 0 3px rgba(31,111,235,.15)}
+#canvas .node .nicon{width:26px;height:26px;border-radius:6px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+#canvas .node .nlabel{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#canvas .node .nport{position:absolute;right:-8px;top:50%;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#1f6feb;border:2px solid #fff;cursor:crosshair;opacity:0;transition:opacity .15s;z-index:2}
+#canvas .node:hover .nport{opacity:1}
+#edges{position:absolute;inset:0;pointer-events:none;z-index:0}
+#edges line{pointer-events:stroke}
 </style>
 </head>
 <body>
@@ -153,9 +162,74 @@ function renderAll() {
   renderInspector();
 }
 
-// 임시 stub (Task 4/6에서 실제 구현)
-function renderCanvas() {}
+// === Canvas ===
+const NODE_TYPES = {
+  start:    { color: '#2ea043', icon: '▶', label: '시작' },
+  process:  { color: '#1f6feb', icon: '▢', label: '프로세스' },
+  decision: { color: '#d29922', icon: '◇', label: '판단' },
+  end:      { color: '#d1242f', icon: '●', label: '종료' }
+};
+let selected = { type: null, id: null };
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderCanvas() {
+  const canvas = document.getElementById('canvas');
+  canvas.innerHTML = '';
+  renderEdges();
+  const wf = currentWorkflow();
+  if (!wf) return;
+  wf.nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'node type-' + n.type + (selected.type === 'node' && selected.id === n.id ? ' sel' : '');
+    el.style.left = n.x + 'px';
+    el.style.top = n.y + 'px';
+    el.dataset.id = n.id;
+    el.innerHTML = `<span class="nicon" style="background:${NODE_TYPES[n.type].color}">${NODE_TYPES[n.type].icon}</span>
+      <span class="nlabel">${escapeHtml(n.label || NODE_TYPES[n.type].label)}</span>
+      <span class="nport" data-port="out"></span>`;
+    el.addEventListener('mousedown', (e) => startDrag(e, n));
+    el.addEventListener('click', (e) => { e.stopPropagation(); selectNode(n.id); });
+    canvas.appendChild(el);
+  });
+}
+
+function selectNode(id) {
+  selected = { type: 'node', id };
+  renderAll();
+}
+
+function startDrag(e, node) {
+  e.preventDefault();
+  selected = { type: 'node', id: node.id };
+  const startX = e.clientX, startY = e.clientY;
+  const origX = node.x, origY = node.y;
+  function move(ev) {
+    node.x = origX + (ev.clientX - startX);
+    node.y = origY + (ev.clientY - startY);
+    const el = document.querySelector(`#canvas .node[data-id="${node.id}"]`);
+    if (el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+    renderEdges();
+  }
+  function up() {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    saveStore();
+  }
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+}
+
+// 임시 stub (Task 5/6에서 실제 구현)
+function renderEdges() {}
 function renderInspector() {}
+
+document.getElementById('canvas').addEventListener('click', () => {
+  selected = { type: null, id: null };
+  renderAll();
+});
 
 // 초기화
 loadStore();

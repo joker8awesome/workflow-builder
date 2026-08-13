@@ -840,7 +840,8 @@ const LS_BACKUP_KEY = LS_KEY + '_backup';
 
 // === 서버 연동 (옵션) ===
 // 서버가 있으면(localhost:3737 등) 자동 사용, 없으면 localStorage만으로 동작
-const API_BASE = (window.__WF_API__ || 'http://localhost:3737');
+// API_BASE — 로컬 서버 우선, GitHub Pages/정적 호스팅에서는 상대 경로(서버 미연결 → localStorage 모드)
+const API_BASE = (window.__WF_API__ || (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://localhost:3737' : ''));
 let serverOnline = false;
 let syncTimer = null;
 

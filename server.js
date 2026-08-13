@@ -333,9 +333,20 @@ app.post('/api/exec', async (req, res) => {
     if (dang.some(d => script.includes(d))) {
       return res.status(403).json({ success: false, error: 'dangerous command blocked' });
     }
+    // 2: agent workspace isolation — 에이전트별 디렉토리 강제
+    const { agent_id } = req.body || {};
+    const AGENT_ROOT = '/opt/data/agents';
+    let cwd = '/opt/data/projects/workflow-builder';
+    if (agent_id) {
+      cwd = AGENT_ROOT + '/' + agent_id;
+      try { fs.mkdirSync(cwd, { recursive: true }); } catch (e) {}
+    }
+    // 3: resource budget — 최대 실행 시간 (기본 10s)
+    const { timeout } = req.body || {};
+    const MAX_TIMEOUT = timeout ? Math.min(+timeout, 30) : 10;
     const { execSync } = require('child_process');
-    const out = execSync(script, { encoding: 'utf-8', timeout: 10000, env: process.env, cwd: '/opt/data/projects/workflow-builder' });
-    res.json({ success: true, output: out.slice(0, 2000) });
+    const out = execSync(script, { encoding: 'utf-8', timeout: MAX_TIMEOUT * 1000, env: process.env, cwd });
+    res.json({ success: true, output: out.slice(0, 2000), cwd });
   } catch (e) {
     res.status(500).json({ success: false, error: maskedError(e) });
   }

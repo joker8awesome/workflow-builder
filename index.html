@@ -481,6 +481,26 @@
   /* 에이전트 패널 */
   #agents-panel h4{color:var(--accent);margin-bottom:8px}
   .agent-item:hover{border-color:var(--accent-strong) !important}
+
+  /* 작업 상태 배지 */
+  .status-badge{
+    position:absolute;bottom:-9px;right:10px;
+    font-size:9px;font-weight:600;
+    background:var(--dark-3);border:1px solid var(--dark-border);
+    padding:1px 6px;border-radius:6px;
+  }
+  /* 인계 메시지 */
+  .handoff-msg{
+    display:block;font-size:9px;color:var(--panel-text-dim);
+    margin-top:2px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  /* 블로커 배지 */
+  .blocker-badge{
+    display:block;font-size:9px;color:#ff5d5d;font-weight:700;
+    margin-top:2px;
+  }
+  /* 블로커 노드 강조 */
+  #canvas .node:has(.blocker-badge){border-color:#ff5d5d !important}
 }
 
 </style>
@@ -511,6 +531,7 @@
     <button id="btn-trace" class="tb-action">트레이스</button>
     <button id="btn-diff" class="tb-action">diff</button>
     <button id="btn-agents" class="tb-action">에이전트</button>
+    <button id="btn-agent-dash" class="tb-action">대시보드</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -575,6 +596,14 @@
     </div>
     <button id="agent-add" class="tb-action" style="width:100%;margin-bottom:12px">+ 에이전트 등록</button>
     <div id="agents-list" style="font-size:13px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 에이전트 대시보드 패널 -->
+  <div id="agent-dash" style="display:none;position:fixed;top:60px;right:16px;z-index:71;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">📊 에이전트 대시보드</h4>
+      <button id="agent-dash-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div id="agent-dash-body" style="font-size:13px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -873,6 +902,9 @@ function renderCanvas() {
     el.innerHTML = `<span class="nicon" style="background:${NODE_TYPES[n.type].color}">${NODE_TYPES[n.type].icon}</span>
       <span class="nlabel">${escapeHtml(n.label || NODE_TYPES[n.type].label)}</span>
       ${agentBadge}
+      ${nodeStatusBadge(n)}
+      ${agentHandoffInfo(n)}
+      ${blockerBadge(n)}
       <span class="nport" data-port="out"></span>
       ${n.locked ? '<span class="lock-badge">🔒</span>' : ''}`;
     // 선택된 에이전트의 담당 노드 강조
@@ -976,6 +1008,7 @@ function renderEdges() {
     }
   });
   renderTempEdge();
+  renderHandoffs();
 }
 
 // 연결 드래그: 노드의 out 핸들에서 시작
@@ -1039,6 +1072,12 @@ function renderInspector() {
       ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
+      <label>작업 상태</label>
+      <select id="f-status" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
+        ${WORK_STATUS.map(s => '<option' + (n.status === s ? ' selected' : '') + '>' + s + '</option>').join('')}
+      </select>
+      <label>인계 메시지 (다음 에이전트에게)</label><input id="f-handoff" value="${escapeHtml(n.handoff_msg || '')}" placeholder="다음 에이전트에게 전달할 내용">
+      <label>블로커</label><input id="f-blocked" type="checkbox" ${n.blocked ? 'checked' : ''}>
       <label>노드 색상</label><input id="f-color" type="color" value="${n.color || NODE_TYPES[n.type].color}">
       <label>담당 에이전트</label>
       <select id="f-agent" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
@@ -1067,6 +1106,9 @@ function renderInspector() {
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
     document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });
+    document.getElementById('f-status').addEventListener('change', (e) => { n.status = e.target.value; saveStore(); renderCanvas(); renderAgentDashboard(); });
+    document.getElementById('f-handoff').addEventListener('input', (e) => { n.handoff_msg = e.target.value; saveStore(); });
+    document.getElementById('f-blocked').addEventListener('change', (e) => { n.blocked = e.target.checked; saveStore(); renderCanvas(); renderAgentDashboard(); });
     document.getElementById('f-color').addEventListener('input', (e) => { n.color = e.target.value; saveStore(); renderCanvas(); });
     document.getElementById('f-add-comment').addEventListener('click', () => {
       const txt = document.getElementById('f-comment').value.trim();
@@ -1830,8 +1872,8 @@ function exportPNG() {
 
 // ── 3.2 실행 로그 ──
 let runLogs = [];
-function logRun(path) {
-  runLogs.unshift({ t: new Date().toLocaleTimeString(), path });
+function logRun(path, agentName) {
+  runLogs.unshift({ t: new Date().toLocaleTimeString(), path: (agentName ? '[' + agentName + '] ' : '') + path });
   if (runLogs.length > 20) runLogs.pop();
   const body = document.getElementById('runlog-body');
   if (body && document.getElementById('runlog-panel').style.display !== 'none') {
@@ -2927,6 +2969,85 @@ function toggleAgentsPanel() {
   if (panel.style.display === 'block') renderAgents();
 }
 
+// ═══ 에이전트 협업 고도화 모듈 ═══
+
+// 4. 작업 상태 단계 — 노드에 status 표시
+const WORK_STATUS = ['대기', '진행', '검토', '완료'];
+function nodeStatusBadge(n) {
+  const s = n.status || '대기';
+  const color = s === '완료' ? 'var(--accent)' : s === '진행' ? '#d29922' : s === '검토' ? '#1f6feb' : 'var(--panel-text-faint)';
+  return '<span class="status-badge" style="color:' + color + '">' + s + '</span>';
+}
+
+// 5. 에이전트 간 메시지 — 노드에 handoff_msg
+function agentHandoffInfo(n) {
+  if (!n.handoff_msg) return '';
+  return '<span class="handoff-msg" title="' + escapeHtml(n.handoff_msg) + '">✉ ' + escapeHtml(String(n.handoff_msg).slice(0, 14)) + (n.handoff_msg.length > 14 ? '…' : '') + '</span>';
+}
+
+// 7. 블로커 플래그
+function blockerBadge(n) {
+  return n.blocked ? '<span class="blocker-badge">⛔ 블로커</span>' : '';
+}
+
+// 6. 파일 충돌 감지 — 같은 워크스페이스 에이전트 찾기
+function detectWorkspaceConflict() {
+  const map = {};
+  agents.forEach(a => {
+    const ws = (a.machine || {}).workspace;
+    if (ws) { if (!map[ws]) map[ws] = []; map[ws].push(a.name); }
+  });
+  const conflicts = Object.entries(map).filter(([ws, names]) => names.length > 1);
+  return conflicts.map(([ws, names]) => ws + ': ' + names.join(', '));
+}
+
+// 1. 에이전트 핸드오프 — 엣지에 인계 표시
+function renderHandoffs() {
+  const wf = currentWorkflow();
+  if (!wf || !wf.edges) return;
+  // 엣지 라벨이 비어있고 양쪽 에이전트가 다르면 핸드오프 표시
+  const svg = document.getElementById('edges');
+  wf.edges.forEach(e => {
+    const from = wf.nodes.find(n => n.id === e.from);
+    const to = wf.nodes.find(n => n.id === e.to);
+    if (!from || !to) return;
+    const aFrom = getAgent(from.agentId);
+    const aTo = getAgent(to.agentId);
+    if (aFrom && aTo && aFrom.id !== aTo.id && !e.label) {
+      // 엣지 중간에 핸드오프 아이콘 (SVG text)
+      const x1 = from.x + 90, y1 = from.y + 26, x2 = to.x + 90, y2 = to.y + 26;
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', (x1 + x2) / 2); t.setAttribute('y', (y1 + y2) / 2 + 10);
+      t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '10');
+      t.setAttribute('fill', '#9aa3ad');
+      t.textContent = '↪ ' + aFrom.name.slice(0, 6) + '→' + aTo.name.slice(0, 6);
+      svg.appendChild(t);
+    }
+  });
+}
+
+// 8. 에이전트 대시보드
+function renderAgentDashboard() {
+  const body = document.getElementById('agent-dash-body');
+  const wf = currentWorkflow();
+  const nodes = (wf && wf.nodes) || [];
+  const rows = agents.map(a => {
+    const mine = nodes.filter(n => n.agentId === a.id);
+    const done = mine.filter(n => n.status === '완료').length;
+    const blocked = mine.filter(n => n.blocked).length;
+    const runs = runLogs.filter(l => l.path && l.path.includes(a.name)).length;
+    return '<div style="padding:10px;margin-bottom:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:10px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(a.color) + '"></span>' +
+      '<strong>' + escapeHtml(a.name) + '</strong>' + (blocked ? ' <span style="color:#ff5d5d">⛔</span>' : '') + '</div>' +
+      '<div style="font-size:11px;color:var(--panel-text-dim);margin-top:4px">담당 ' + mine.length + ' · 완료 ' + done + ' · 실행 ' + runs + '</div>' +
+      (blocked ? '<div style="font-size:11px;color:#ff5d5d">블로커 ' + blocked + '개</div>' : '') +
+      '</div>';
+  }).join('');
+  const conflicts = detectWorkspaceConflict();
+  body.innerHTML = (agents.length === 0 ? '<span style="color:var(--panel-text-faint)">에이전트 없음</span>' : rows) +
+    (conflicts.length ? '<div style="margin-top:10px;padding:8px;background:rgba(255,93,93,.1);border-radius:8px;font-size:11px;color:#ff5d5d">⚠ 워크스페이스 충돌: ' + escapeHtml(conflicts.join(' / ')) + '</div>' : '');
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -2956,6 +3077,13 @@ document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';
 });
 document.getElementById('agent-add').addEventListener('click', () => showAgentForm(null));
+document.getElementById('btn-agent-dash').addEventListener('click', () => {
+  document.getElementById('agent-dash').style.display = 'block';
+  renderAgentDashboard();
+});
+document.getElementById('agent-dash-close').addEventListener('click', () => {
+  document.getElementById('agent-dash').style.display = 'none';
+});
 loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;

@@ -1,0 +1,7 @@
+node_modules/
+docs/
+.hermes/
+*.log
+.env
+auth.json
+.DS_Store

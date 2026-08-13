@@ -14,6 +14,14 @@
   #canvas{position:absolute;inset:0}
   #inspector{width:280px;background:#fff;border-left:1px solid #e2e4e8;flex-shrink:0;overflow-y:auto}
   @media(max-width:900px){#sidebar{position:absolute;z-index:10;height:100%;transform:translateX(-100%);transition:transform .2s}#sidebar.open{transform:none}#inspector{position:absolute;right:0;z-index:10;height:100%;transform:translateX(100%);transition:transform .2s}#inspector.open{transform:none}}
+#wf-list{list-style:none;padding:8px;overflow-y:auto;flex:1}
+#wf-list li{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:14px;margin-bottom:4px}
+#wf-list li:hover{background:#f0f1f3}
+#wf-list li.active{background:#e8f0fe;color:#1a5fb4;font-weight:600}
+#wf-list .wf-del{border:none;background:none;font-size:16px;color:#aaa;cursor:pointer;padding:0 4px}
+#wf-list .wf-del:hover{color:#d33}
+#add-wf{margin:10px;padding:10px;border:1px dashed #bbb;border-radius:8px;background:none;cursor:pointer;font-size:14px}
+#add-wf:hover{background:#f0f1f3}
 </style>
 </head>
 <body>
@@ -100,10 +108,60 @@ function currentWorkflow() {
   return store.workflows.find(w => w.id === store.activeWorkflowId) || null;
 }
 
+// === Sidebar ===
+function renderSidebar() {
+  const ul = document.getElementById('wf-list');
+  ul.innerHTML = '';
+  store.workflows.forEach(wf => {
+    const li = document.createElement('li');
+    li.textContent = wf.name;
+    li.className = wf.id === store.activeWorkflowId ? 'active' : '';
+    li.dataset.id = wf.id;
+    li.addEventListener('click', () => {
+      store.activeWorkflowId = wf.id;
+      document.getElementById('wf-name').value = wf.name;
+      renderAll(); saveStore();
+    });
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.className = 'wf-del';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!confirm('워크플로우를 삭제할까요?')) return;
+      store.workflows = store.workflows.filter(w => w.id !== wf.id);
+      if (store.activeWorkflowId === wf.id) {
+        store.activeWorkflowId = store.workflows[0]?.id || null;
+      }
+      renderAll(); saveStore(true);
+    });
+    li.appendChild(del);
+    ul.appendChild(li);
+  });
+}
+
+document.getElementById('add-wf').addEventListener('click', () => {
+  const wf = defaultWorkflow('새 워크플로우 ' + (store.workflows.length + 1));
+  store.workflows.push(wf);
+  store.activeWorkflowId = wf.id;
+  document.getElementById('wf-name').value = wf.name;
+  renderAll(); saveStore(true);
+});
+
+function renderAll() {
+  renderSidebar();
+  renderCanvas();
+  renderInspector();
+}
+
+// 임시 stub (Task 4/6에서 실제 구현)
+function renderCanvas() {}
+function renderInspector() {}
+
 // 초기화
 loadStore();
 const wf0 = currentWorkflow();
 if (wf0) document.getElementById('wf-name').value = wf0.name;
+renderAll();
 </script>
 </body>
 </html>

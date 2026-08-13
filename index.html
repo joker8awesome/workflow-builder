@@ -201,7 +201,7 @@
     font-size:14px;flex-shrink:0;aspect-ratio:1;
   }
   #canvas .node .nlabel{
-    font-size:14px;font-weight:700;
+    font-size:14px;font-weight:700;color:#f1f3f5;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     text-wrap:balance;
   }
@@ -296,7 +296,7 @@
   }
   #topbar button:active{translate:0 1px;transform:scale(.97)}
   #topbar button{transition:border-color .15s, background .15s, color .15s, translate .15s, transform .1s}
-  #topbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #topbar button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px rgba(0,255,135,.15)}
 
   #topbar input#wf-name{
     background:var(--dark-2);
@@ -637,6 +637,7 @@
     <button id="btn-trace" class="tb-action">트레이스</button>
     <button id="btn-diff" class="tb-action">diff</button>
     <button id="btn-risk" class="tb-action">위험</button>
+    <button id="btn-feedback" class="tb-action">의견</button>
     <button id="btn-agents" class="tb-action">에이전트</button>
     <button id="btn-agent-dash" class="tb-action">대시보드</button>
     <button id="btn-sessions" class="tb-action">세션</button>
@@ -980,6 +981,7 @@ function saveStore(immediate) {
   const write = () => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(store));
+      milestoneCheck();
       localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(store));
       const el = document.getElementById('save-status');
       if (el) { el.textContent = '저장됨'; setTimeout(() => el.textContent = '', 2000); }
@@ -1017,6 +1019,21 @@ function currentWorkflow() {
 function renderSidebar() {
   const ul = document.getElementById('wf-list');
   ul.innerHTML = '';
+  setTimeout(() => {
+    const items = ul.querySelectorAll('li').length;
+    let hint = document.getElementById('sidebar-hint');
+    if (items === 0) {
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'sidebar-hint';
+        hint.style.cssText = 'padding:14px;font-size:12px;color:var(--panel-text-faint);text-align:center';
+        const sb = document.getElementById('sidebar');
+        if (sb) sb.appendChild(hint);
+      }
+      hint.innerHTML = '워크플로우 없음<br><strong style="color:var(--accent)">+ 버튼</strong>으로 시작';
+      hint.style.display = 'block';
+    } else if (hint) hint.style.display = 'none';
+  }, 100);
   store.workflows.forEach(wf => {
     const li = document.createElement('li');
     const nameSpan = document.createElement('span');
@@ -1060,6 +1077,45 @@ function renderAll() {
   renderCanvas();
   renderInspector();
   renderMinimap();
+  renderEmptyStates();
+}
+
+// 1: 빈 상태 온보딩
+function renderEmptyStates() {
+  const wf = currentWorkflow();
+  const nodes = (wf && wf.nodes) || [];
+  const canvas = document.getElementById('canvas-wrap');
+  let guide = document.getElementById('empty-guide');
+  if (nodes.length === 0) {
+    if (!guide) {
+      guide = document.createElement('div');
+      guide.id = 'empty-guide';
+      guide.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;z-index:5;pointer-events:none';
+      canvas.appendChild(guide);
+    }
+    guide.innerHTML = '<div style="font-size:15px;color:var(--panel-text-dim);margin-bottom:12px">캔버스가 비어 있습니다</div>' +
+      '<div style="font-size:13px;color:var(--panel-text-faint)">🖱️ <strong>우클릭</strong>으로 노드 추가 · 노드 <strong>가장자리</strong>에서 연결<br>' +
+      '<strong>Ctrl+K</strong> 명령 팔레트 · [AI]로 자동 생성</div>';
+    guide.style.display = 'block';
+  } else if (guide) {
+    guide.style.display = 'none';
+  }
+}
+
+// 5: 단계별 성공 표시
+function milestoneCheck() {
+  try {
+    const wf = currentWorkflow();
+    if (!wf) return;
+    const key = LS_KEY + '_milestones';
+    const m = JSON.parse(localStorage.getItem(key) || '{}');
+    const id = wf.id;
+    if (!m[id]) m[id] = { node: false, edge: false, run: false };
+    const cur = m[id];
+    if ((wf.nodes || []).length > 0 && !cur.node) { cur.node = true; toast('🎉 첫 노드 추가 완료!'); }
+    if ((wf.edges || []).length > 0 && !cur.edge) { cur.edge = true; toast('🎉 첫 연결 완료!'); }
+    localStorage.setItem(key, JSON.stringify(m));
+  } catch (e) {}
 }
 
 // === Canvas ===
@@ -1086,6 +1142,14 @@ function nIndex(n) {
   indexCounter[n.type]++;
   return indexCounter[n.type];
 }
+// 3: 노드 hover 툴팁 — 예상 비용/시간 + 타입 설명
+function nodeTooltip(n) {
+  const t = NODE_TYPES[n.type];
+  const est = n.type === 'decision' ? '~2s · LLM 1회' : n.type === 'approval' ? '~5s · 승인 대기' :
+    n.type === 'reviewer' ? '~1.5s · 검증' : n.action ? '~1s · 스크립트' : '~0.3s';
+  return '<strong>' + (t ? t.label : n.type) + '</strong> — ' + (n.label || '') + '<br>' +
+    '<span style="font-size:11px;color:var(--panel-text-dim)">예상: ' + est + '</span>';
+}
 function renderCanvas() {
   indexCounter = {};  // 노드 순번 초기화
   const canvas = document.getElementById('canvas');
@@ -1108,6 +1172,7 @@ function renderCanvas() {
     el.style.left = n.x + 'px';
     el.style.top = n.y + 'px';
     el.dataset.id = n.id;
+    el.setAttribute('tabindex', '0');
     const agent = getAgent(n.agentId);
     const agentBadge = agent
       ? `<span class="agent-badge" style="background:${escapeHtml(agent.color)}">${escapeHtml(agent.name)}</span>`
@@ -1125,6 +1190,23 @@ function renderCanvas() {
       ${n.locked ? '<span class="lock-badge">🔒</span>' : ''}`;
     // 선택된 에이전트의 담당 노드 강조
     if (selectedAgent && n.agentId === selectedAgent) el.classList.add('agent-highlight');
+    el.addEventListener('mouseenter', (e) => {
+      const tt = document.createElement('div');
+      tt.id = 'node-tooltip';
+      tt.style.cssText = 'position:fixed;z-index:120;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--panel-text);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+      tt.innerHTML = nodeTooltip(n);
+      document.body.appendChild(tt);
+      const r = el.getBoundingClientRect();
+      tt.style.left = Math.min(r.left + r.width + 8, window.innerWidth - 220) + 'px';
+      tt.style.top = Math.max(8, r.top - 10) + 'px';
+    });
+    el.addEventListener('mouseleave', () => {
+      const tt = document.getElementById('node-tooltip');
+      if (tt) tt.remove();
+    });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selected = { type: 'node', id: n.id }; renderAll(); }
+    });
     el.addEventListener('mousedown', (e) => startDrag(e, n));
     el.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4075,6 +4157,45 @@ async function renderGovernance() {
   } catch (e) { body.innerHTML = '<span style="color:var(--panel-text-faint)">로드 실패</span>'; }
 }
 
+// 4: 인앱 피드백 + NPS
+function openFeedback() {
+  const ans = prompt('의견을 입력하세요 (버그/제안/아이디어):');
+  if (ans && ans.trim()) {
+    try {
+      const fb = JSON.parse(localStorage.getItem(LS_KEY + '_feedback') || '[]');
+      fb.push({ text: ans.trim(), ts: Date.now() });
+      localStorage.setItem(LS_KEY + '_feedback', JSON.stringify(fb.slice(-50)));
+    } catch (e) {}
+    toast('💬 의견 감사합니다!');
+  }
+}
+function askNPS() {
+  try {
+    if (localStorage.getItem(LS_KEY + '_nps')) return;
+    setTimeout(() => {
+      toastHTML('<div style="min-width:280px"><strong style="display:block;margin-bottom:8px;color:var(--accent)">만족도 조사</strong>' +
+        '<div style="font-size:12px;color:var(--panel-text-dim);margin-bottom:10px">이 워크플로우 빌더가 유용한가요?</div>' +
+        '<div style="display:flex;gap:6px">' +
+        '<button id="nps-yes" class="tb-action" style="flex:1">👍 좋아요</button>' +
+        '<button id="nps-no" class="tb-action" style="flex:1">👎 아쉬워요</button>' +
+        '</div></div>', 12000);
+      const yes = document.getElementById('nps-yes');
+      const no = document.getElementById('nps-no');
+      if (yes) yes.addEventListener('click', () => { localStorage.setItem(LS_KEY + '_nps', '1'); document.querySelectorAll('.toast').forEach(t => t.remove()); });
+      if (no) no.addEventListener('click', () => { localStorage.setItem(LS_KEY + '_nps', '0'); document.querySelectorAll('.toast').forEach(t => t.remove()); setTimeout(() => openFeedback(), 300); });
+    }, 25000);
+  } catch (e) {}
+}
+// 7: 사용 행동 추적
+function trackAction(action) {
+  try {
+    const key = LS_KEY + '_actions';
+    const a = JSON.parse(localStorage.getItem(key) || '{}');
+    a[action] = (a[action] || 0) + 1;
+    localStorage.setItem(key, JSON.stringify(a));
+  } catch (e) {}
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -4100,6 +4221,7 @@ initCommandPalette();
 setTimeout(initPresence, 800);
 document.getElementById('btn-diff').addEventListener('click', showWfDiff);
 document.getElementById('btn-risk').addEventListener('click', showRiskDiff);
+document.getElementById('btn-feedback').addEventListener('click', openFeedback);
 document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
 document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';
@@ -4149,6 +4271,10 @@ document.getElementById('gov-close').addEventListener('click', () => {
 loadAgents();
 setTimeout(() => { if (serverOnline) flushOfflineQueue(); }, 3000);
 onboardingTour();
+askNPS();
+const br = document.getElementById('btn-run');
+if (br) br.addEventListener('click', () => trackAction('run'));
+trackAction('visit');
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;
 showStats = async function() {

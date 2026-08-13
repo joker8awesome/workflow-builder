@@ -189,6 +189,7 @@
   #canvas .node.type-process{--node-accent:#1f6feb}
   #canvas .node.type-decision{--node-accent:#d29922}
   #canvas .node.type-approval{--node-accent:#b45f06}
+  #canvas .node.type-supervisor{--node-accent:#8957e5}
   #canvas .node.type-end{--node-accent:#d1242f}
   #canvas .node:hover{border-color:color-mix(in srgb, var(--accent) 60%, var(--node-border))}
   #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow);transform:translateY(-2px)}
@@ -966,11 +967,12 @@ function renderAll() {
 
 // === Canvas ===
 const NODE_TYPES = {
-  start:    { color: '#2ea043', icon: '▶', label: '시작', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M3 1l10 6-10 6z"/></svg>' },
-  process:  { color: '#1f6feb', icon: '▢', label: '프로세스', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="10" height="10" rx="2"/></svg>' },
-  decision: { color: '#d29922', icon: '◇', label: '판단', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 6-6 6-6-6z"/></svg>' },
-  approval: { color: '#b45f06', icon: '⏸', label: '승인', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="3.5" height="10" rx="1"/><rect x="8.5" y="2" width="3.5" height="10" rx="1"/></svg>' },
-  end:      { color: '#d1242f', icon: '●', label: '종료', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><circle cx="7" cy="7" r="5"/></svg>' }
+  start:      { color: '#2ea043', icon: '▶', label: '시작', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M3 1l10 6-10 6z"/></svg>' },
+  process:    { color: '#1f6feb', icon: '▢', label: '프로세스', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="10" height="10" rx="2"/></svg>' },
+  decision:   { color: '#d29922', icon: '◇', label: '판단', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 6-6 6-6-6z"/></svg>' },
+  approval:   { color: '#b45f06', icon: '⏸', label: '승인', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="3.5" height="10" rx="1"/><rect x="8.5" y="2" width="3.5" height="10" rx="1"/></svg>' },
+  supervisor: { color: '#8957e5', icon: '§', label: '감독', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 3v6l-6 3-6-3V4z"/><circle cx="7" cy="7" r="2"/></svg>' },
+  end:        { color: '#d1242f', icon: '●', label: '종료', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><circle cx="7" cy="7" r="5"/></svg>' }
 };
 let selected = { type: null, id: null };
 

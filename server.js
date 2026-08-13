@@ -513,6 +513,32 @@ app.get('/api/agent-metrics', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 추적/체크포인트/카드 API ===
+app.get('/api/spans', async (req, res) => {
+  try {
+    const { trace } = req.query || {};
+    const { rows } = trace
+      ? await pool.query('SELECT * FROM agent_spans WHERE trace_id = $1 ORDER BY started_at ASC', [trace])
+      : await pool.query('SELECT * FROM agent_spans ORDER BY started_at DESC LIMIT 100');
+    res.json({ success: true, spans: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/checkpoints', async (req, res) => {
+  try {
+    const { session } = req.query || {};
+    const { rows } = session
+      ? await pool.query('SELECT * FROM agent_checkpoints WHERE session_id = $1 ORDER BY id DESC LIMIT 50', [session])
+      : await pool.query('SELECT * FROM agent_checkpoints ORDER BY id DESC LIMIT 50');
+    res.json({ success: true, checkpoints: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+app.get('/api/cards', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM agent_cards ORDER BY updated_at DESC');
+    res.json({ success: true, cards: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === 에이전트 세션/메시지 API ===
 app.get('/api/sessions', async (req, res) => {
   try {

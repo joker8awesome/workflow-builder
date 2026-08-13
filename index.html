@@ -48,6 +48,9 @@
     <strong>워크플로우 빌더</strong>
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
+    <button id="btn-export" style="margin-left:auto;padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">내보내기</button>
+    <button id="btn-import" style="padding:7px 14px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;font-size:13px">가져오기</button>
+    <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
   <div id="app">
@@ -388,6 +391,63 @@ Object.keys(NODE_TYPES).forEach(t => {
 document.getElementById('canvas').addEventListener('click', () => {
   selected = { type: null, id: null };
   renderAll();
+});
+
+// === 내보내기 / 가져오기 ===
+document.getElementById('btn-export').addEventListener('click', () => {
+  const payload = { app: 'workflow-builder', version: 1, exported_at: new Date().toISOString(), data: store };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const wf = currentWorkflow();
+  const fname = (wf && wf.name ? wf.name.replace(/[^\w가-힣]+/g, '_') : 'workflow') + '_' + new Date().toISOString().slice(0,10) + '.json';
+  a.href = url; a.download = fname;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+});
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  document.getElementById('file-import').click();
+});
+document.getElementById('file-import').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      const imported = parsed && parsed.data && parsed.data.workflows ? parsed.data : parsed;
+      if (!Array.isArray(imported.workflows) || imported.workflows.length === 0) {
+        throw new Error('워크플로우 데이터 없음');
+      }
+      // ID 충돌 방지: 가져온 데이터의 ID를 새로 부여
+      const idMap = {};
+      imported.workflows.forEach(w => {
+        const newWfId = 'wf_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+        idMap[w.id] = newWfId;
+        w.id = newWfId;
+        w.nodes.forEach(n => {
+          const newN = 'n_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+          idMap[n.id] = newN; n.id = newN;
+        });
+        w.edges.forEach(ed => {
+          ed.id = 'e_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+          ed.from = idMap[ed.from] || ed.from;
+          ed.to = idMap[ed.to] || ed.to;
+        });
+      });
+      store.workflows = store.workflows.concat(imported.workflows);
+      store.activeWorkflowId = imported.workflows[imported.workflows.length-1].id;
+      saveStore(true); renderAll();
+      const wfc = currentWorkflow();
+      if (wfc) document.getElementById('wf-name').value = wfc.name;
+      alert('가져오기 완료: ' + imported.workflows.length + '개 워크플로우 추가');
+    } catch (err) {
+      alert('가져오기 실패: ' + err.message);
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
 });
 
 // === 키보드 삭제 ===

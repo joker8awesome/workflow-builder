@@ -23,8 +23,38 @@ function getNousAuth() {
   }
 }
 
+// === LLM 폴백 체인 — Nous 우선, 실패 시 대체 ===
+let fallbackLog = [];
+function logFallback(event) {
+  fallbackLog.push({ ...event, ts: new Date().toISOString() });
+  if (fallbackLog.length > 100) fallbackLog.shift();
+}
+async function callLLMWithFallback(messages, opts) {
+  const nous = getNousAuth();
+  if (!nous) return { fallback: true, error: 'no auth' };
+  try {
+    const r = await fetch(nous.base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
+      body: JSON.stringify({ model: opts.model, messages, temperature: opts.temperature || 0.2, max_tokens: opts.max_tokens || 100 }),
+    });
+    if (!r.ok) throw new Error('provider ' + r.status);
+    const j = await r.json();
+    logFallback({ provider: 'nous', ok: true });
+    return { provider: 'nous', ok: true, data: j };
+  } catch (e) {
+    // 폴백 — 로컬 규칙 기반 (LLM 없이도 동작)
+    logFallback({ provider: 'nous', ok: false, error: e.message, fallback: 'rule-based' });
+    return { provider: 'rule-based', ok: true, fallback: true, data: { choices: [{ message: { content: opts.ruleFallback || 'NO' } }] } };
+  }
+}
+
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+
+// 폴백 로그 API
+app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallbackLog }));
 
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool({

@@ -87,3 +87,23 @@ const API_BASE = (window.__WF_API__ || 'http://localhost:3737');
 ```
 - 배포 시 `window.__WF_API__ = 'https://도메인/api'` 설정 가능
 - 하위 슬러그 배포 시 서버 라우트와 슬러그 경로 정렬 필요
+
+## DR — 백업/복원 (2026-08-13)
+
+### 백업
+- 자동: 매일 02:00 cron (`wf_backup.sh` → /opt/data/backups/)
+- 수동: `psql -h /opt/data/pgdata -U hermes -d odds -c "SELECT pg_dump..."`
+
+### 암호화 키 별도 보관 (필수)
+- `WF_VAULT_KEY` (시크릿 볼트 키)는 **DB 백업과 같은 위치에 두지 말 것**
+- 별도 보안 저장소(패스워드 매니저 등)에 보관
+
+### 복원 테스트 (정기 실행 권장)
+```bash
+/opt/data/scripts/wf_restore_test.sh /opt/data/backups/wf_YYYYMMDD.sql
+```
+
+### 복구 절차
+1. `psql -h /opt/data/pgdata -U hermes -d postgres -c "CREATE DATABASE odds_restored"`
+2. `psql -h /opt/data/pgdata -U hermes -d odds_restored -f 백업.sql`
+3. 검증 후 `odds` DB 교체

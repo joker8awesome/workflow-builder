@@ -3,7 +3,25 @@
 const express = require('express');
 const { Pool } = require('pg');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { WebSocketServer } = require('ws');
+
+// Nous Portal 인증 토큰 로드 (서버에서만 사용 — 브라우저 노출 금지)
+function getNousAuth() {
+  try {
+    const auth = JSON.parse(fs.readFileSync('/opt/data/auth.json', 'utf-8'));
+    const nous = auth.providers && auth.providers.nous;
+    if (!nous || !nous.access_token) return null;
+    return {
+      token: nous.access_token,
+      base: nous.inference_base_url || 'https://inference-api.nousresearch.com/v1',
+    };
+  } catch (e) {
+    console.warn('Nous auth 로드 실패:', e.message);
+    return null;
+  }
+}
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -217,6 +235,125 @@ app.get('/api/workflows/:id/logs', async (req, res) => {
     );
     res.json({ success: true, logs: rows });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === LLM 프록시 — 워크플로우 생성 ===
+const WF_SCHEMA_EXAMPLE = `{
+  "nodes": [
+    {"id":"n_s","type":"start","x":60,"y":80,"label":"시작","desc":"","assignee":"","due":"","tags":[]},
+    {"id":"n_1","type":"process","x":60,"y":220,"label":"단계명","desc":"","assignee":"","due":"","tags":[]},
+    {"id":"n_d","type":"decision","x":60,"y":360,"label":"판단","desc":"","assignee":"","due":"","tags":[]},
+    {"id":"n_e","type":"end","x":60,"y":500,"label":"종료","desc":"","assignee":"","due":"","tags":[]}
+  ],
+  "edges": [
+    {"id":"e1","from":"n_s","to":"n_1","label":""},
+    {"id":"e2","from":"n_1","to":"n_d","label":""},
+    {"id":"e3","from":"n_d","to":"n_e","label":"Yes"}
+  ]
+}`;
+
+app.post('/api/ai/generate', async (req, res) => {
+  try {
+    const { prompt } = req.body || {};
+    if (!prompt || !prompt.trim()) {
+      return res.status(400).json({ success: false, error: 'prompt required' });
+    }
+    const auth = getNousAuth();
+    if (!auth) {
+      return res.status(503).json({ success: false, error: 'Nous 인증 토큰 없음' });
+    }
+    const sysPrompt = `You are a workflow designer. Convert the user's request into a workflow JSON.
+Rules:
+- node types: start, process, decision, end
+- start node label "시작", end node label "종료"
+- decision nodes must have outgoing edges labeled "Yes"/"No"
+- coordinates: x starts 60, y increments 140
+- Return ONLY valid JSON (no markdown, no explanation)
+Example format:
+${WF_SCHEMA_EXAMPLE}`;
+
+    const r = await fetch(auth.base + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + auth.token,
+      },
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-v4-flash-0731',
+        messages: [
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 1500,
+      }),
+    });
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '');
+      return res.status(502).json({ success: false, error: 'LLM API 오류: ' + r.status + ' ' + errText.slice(0, 200) });
+    }
+    const data = await r.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    // JSON 추출 (마크다운 코드 블록 처리)
+    let jsonStr = content.trim();
+    const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) jsonStr = fence[1].trim();
+    const firstBrace = jsonStr.indexOf('{');
+    const lastBrace = jsonStr.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
+    }
+    let wf;
+    try {
+      wf = JSON.parse(jsonStr);
+    } catch (e) {
+      return res.status(422).json({ success: false, error: 'LLM 출력 파싱 실패: ' + e.message, raw: content.slice(0, 500) });
+    }
+    // LLM 출력 정규화 — 다양한 형식 → nodes/edges
+    // 형식 A: { nodes:[], edges:[] }
+    // 형식 B: { workflow: { steps: [...] } }
+    // 형식 C: { steps: [...] }
+    let rawWf = wf.workflow && wf.workflow.nodes ? wf.workflow : wf;
+    if (!rawWf.nodes && (rawWf.steps || (rawWf.workflow && rawWf.workflow.steps))) {
+      const steps = rawWf.steps || (rawWf.workflow && rawWf.workflow.steps);
+      const nodes = [
+        { id: 'n_s', type: 'start', x: 60, y: 80, label: '시작', desc: '', assignee: '', due: '', tags: [] },
+      ];
+      const edges = [];
+      let prev = 'n_s';
+      steps.forEach((s, i) => {
+        const id = 'n_' + (i + 1);
+        nodes.push({
+          id, type: 'process', x: 60, y: 80 + (i + 1) * 140,
+          label: s.name || s.label || '단계 ' + (i + 1),
+          desc: s.description || s.desc || '', assignee: '', due: '', tags: [],
+        });
+        edges.push({ id: 'e_' + i, from: prev, to: id, label: '' });
+        prev = id;
+      });
+      nodes.push({ id: 'n_e', type: 'end', x: 60, y: 80 + (steps.length + 1) * 140, label: '종료', desc: '', assignee: '', due: '', tags: [] });
+      edges.push({ id: 'e_end', from: prev, to: 'n_e', label: '' });
+      wf = { nodes, edges };
+    }
+    // 스키마 검증/보정
+    if (!Array.isArray(wf.nodes)) wf.nodes = [];
+    if (!Array.isArray(wf.edges)) wf.edges = [];
+    wf.nodes.forEach((n, i) => {
+      n.id = n.id || 'n_' + i;
+      n.type = ['start', 'process', 'decision', 'end'].includes(n.type) ? n.type : 'process';
+      n.x = typeof n.x === 'number' ? n.x : 60 + (i % 4) * 240;
+      n.y = typeof n.y === 'number' ? n.y : 60 + Math.floor(i / 4) * 140;
+      n.label = n.label || (n.type === 'start' ? '시작' : n.type === 'end' ? '종료' : '단계 ' + (i + 1));
+      n.desc = n.desc || ''; n.assignee = n.assignee || ''; n.due = n.due || ''; n.tags = n.tags || [];
+    });
+    wf.edges.forEach((e, i) => {
+      e.id = e.id || 'e_' + i;
+      e.label = e.label || '';
+    });
+    res.json({ success: true, workflow: wf });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 server.listen(PORT, () => {

@@ -273,7 +273,7 @@ app.post('/api/ai/decide', async (req, res) => {
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
     const auth = getNousAuth();
     if (!auth) return res.status(503).json({ success: false, error: 'Nous 인증 없음' });
-    const sys = `You are a workflow decision maker. Given a question and context, answer with ONLY "YES" or "NO".
+    const sys = `You are a workflow decision maker. Given a question and context, answer with ONLY \"YES\" or \"NO\" followed by a confidence score 0-100. Format: YES 85 or NO 70.
 Question: ${prompt}
 Context: ${JSON.stringify(context || {})}`;
     const r = await fetch(auth.base + '/chat/completions', {
@@ -282,14 +282,16 @@ Context: ${JSON.stringify(context || {})}`;
       body: JSON.stringify({
         model: 'deepseek/deepseek-v4-flash-0731',
         messages: [{ role: 'system', content: sys }],
-        temperature: 0.1, max_tokens: 10,
+        temperature: 0.1, max_tokens: 100,
       }),
     });
     if (!r.ok) return res.status(502).json({ success: false, error: 'LLM 오류 ' + r.status });
     const data = await r.json();
     const answer = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
     const yes = answer.includes('YES');
-    res.json({ success: true, decision: yes, raw: answer });
+    const confMatch = answer.match(/(\d{1,3})/);
+    const confidence = confMatch ? Math.min(100, Math.max(0, parseInt(confMatch[1]))) : 50;
+    res.json({ success: true, decision: yes, confidence, raw: answer });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
@@ -666,6 +668,54 @@ app.post('/api/cache/put', async (req, res) => {
       `INSERT INTO llm_cache (prompt_hash, prompt, response, model) VALUES ($1,$2,$3,$4)
        ON CONFLICT DO NOTHING`, [hash, prompt || '', response || '', model || '']);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 1. 활동 이벤트 피드 API ===
+app.get('/api/events', async (req, res) => {
+  try {
+    const { type } = req.query || {};
+    const { rows } = type
+      ? await pool.query('SELECT * FROM audit_logs WHERE action = $1 ORDER BY id DESC LIMIT 100', [type])
+      : await pool.query('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100');
+    res.json({ success: true, events: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 2. 텔레그램 알림 — 실행 실패/블로커 시 전송 ===
+// (텔레그램 노드 액션 확장: action === 'telegram-alert' 시 실패만 전송)
+// 실행 결과 저장 시 실패면 audit에 기록 (기존) + 클라이언트가 WS로 알림
+
+// === 3. 신뢰도/자율성: ai/decide 응답에 confidence 포함 ===
+app.post('/api/ai/decide', async (req, res) => {
+  try {
+    const { prompt, context, model } = req.body || {};
+    if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
+    const auth = getNousAuth();
+    if (!auth) return res.status(503).json({ success: false, error: 'Nous 인증 토큰 없음' });
+    const r = await fetch(auth.inference_base_url + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.access_token },
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-v4-flash-0731',
+        messages: [
+          { role: 'system', content: 'Answer ONLY with YES or NO followed by a confidence score 0-100. Format: YES 85' },
+          { role: 'user', content: String(prompt) },
+        ],
+        temperature: 0.2,
+        max_tokens: 100,
+      }),
+    });
+    if (!r.ok) {
+      const errText = await r.text().catch(() => '');
+      return res.status(502).json({ success: false, error: 'LLM API 오류: ' + r.status + ' ' + errText.slice(0, 200) });
+    }
+    const data = await r.json();
+    const content = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
+    const yes = content.includes('YES');
+    const confMatch = content.match(/(\d{1,3})/);
+    const confidence = confMatch ? Math.min(100, Math.max(0, parseInt(confMatch[1]))) : 50;
+    res.json({ success: true, decision: yes, confidence, raw: content });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 

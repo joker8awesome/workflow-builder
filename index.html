@@ -564,6 +564,23 @@
   #agents-panel h4{color:var(--accent);margin-bottom:8px}
   .agent-item:hover{border-color:var(--accent-strong) !important}
 
+  /* 신뢰도 배지 */
+  .conf-badge{
+    position:absolute;top:-9px;right:10px;
+    font-size:9px;font-weight:700;
+    background:var(--dark-3);border:1px solid var(--dark-border);
+    padding:1px 6px;border-radius:6px;
+  }
+  /* 파이프라인 상태 배지 */
+  .pipe-badge{
+    display:inline-block;margin-left:4px;font-size:10px;
+  }
+  .pipe-badge.done{color:var(--accent)}
+  .pipe-badge.blocked{color:#ff5d5d}
+  .pipe-badge.running{color:#d29922;animation:pulse 1s infinite}
+  .pipe-badge.idle{color:var(--panel-text-faint)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
   /* 작업 상태 배지 */
   .status-badge{
     position:absolute;bottom:-9px;right:10px;
@@ -616,6 +633,7 @@
     <button id="btn-agent-dash" class="tb-action">대시보드</button>
     <button id="btn-sessions" class="tb-action">세션</button>
     <button id="btn-market" class="tb-action">마켓</button>
+    <button id="btn-feed" class="tb-action">활동</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -716,6 +734,19 @@
     </div>
     <button id="tpl-publish" class="tb-action" style="width:100%;margin-bottom:10px">+ 현재 워크플로우 템플릿 게시</button>
     <div id="market-body" style="font-size:12px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 에이전트 활동 피드 패널 -->
+  <div id="feed-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:74;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:15px">📡 에이전트 활동 피드</h4>
+      <div style="display:flex;gap:6px">
+        <select id="feed-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
+          <option value="">전체</option><option value="run">실행</option><option value="approve">승인</option><option value="fail">실패</option>
+        </select>
+        <button id="feed-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      </div>
+    </div>
+    <div id="feed-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -1029,6 +1060,8 @@ function renderCanvas() {
       <span class="nindex">${nIndex(n)}</span>
       ${agentBadge}
       ${nodeStatusBadge(n)}
+      ${renderConfidence(n)}
+      ${pipelineStatusBadge(n)}
       ${agentHandoffInfo(n)}
       ${blockerBadge(n)}
       <span class="nport" data-port="out"></span>
@@ -1194,7 +1227,11 @@ function renderInspector() {
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
       <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
-      ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea><label>모델 라우팅</label><select id="f-model" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px"><option value="">자동</option><option value="cheap"' + (n.model === 'cheap' ? ' selected' : '') + '>저비용</option><option value="smart"' + (n.model === 'smart' ? ' selected' : '') + '>고성능</option></select>' : ''}
+      ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea><label>모델 라우팅</label><select id="f-model" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px"><option value="">자동</option><option value="cheap"' + (n.model === 'cheap' ? ' selected' : '') + '>저비용</option><option value="smart"' + (n.model === 'smart' ? ' selected' : '') + '>고성능</option></select>' +
+        '<label>자율성 스펙트럼</label><select id="f-auto" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">' +
+        '<option value="auto"' + (n.autonomy === 'auto' || !n.autonomy ? ' selected' : '') + '>전체 자율</option>' +
+        '<option value="supervised"' + (n.autonomy === 'supervised' ? ' selected' : '') + '>감독 자율</option>' +
+        '<option value="approval"' + (n.autonomy === 'approval' ? ' selected' : '') + '>승인 필수</option></select>' : ''}
       ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
       <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
       <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
@@ -1231,6 +1268,8 @@ function renderInspector() {
     if (fLlm) fLlm.addEventListener('input', (e) => { n.llm_prompt = e.target.value; saveStore(); });
     const fModel = document.getElementById('f-model');
     if (fModel) fModel.addEventListener('change', (e) => { n.model = e.target.value; saveStore(); });
+    const fAuto = document.getElementById('f-auto');
+    if (fAuto) fAuto.addEventListener('change', (e) => { n.autonomy = e.target.value; saveStore(); });
     const fCond2 = document.getElementById('f-cond2');
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
@@ -2179,6 +2218,7 @@ function runNodeAction(node) {
   });
 }
 async function executeWorkflow() {
+  try {
   const wf = currentWorkflow();
   if (!wf) return;
   const warns = validateWorkflow();
@@ -2235,6 +2275,13 @@ async function executeWorkflow() {
   toast('실행 완료: ' + summary);
   logRun(summary);
   computeAgentMetrics().then(() => { if (document.getElementById('agent-dash').style.display === 'block') renderAgentMetrics(); });
+  } catch (e) {
+    execState.running = false;
+    document.getElementById('rs-status').textContent = '⛔ 실행 오류';
+    errorRecovery3('실행 오류', e.message, '실행 설정을 확인하거나 노드를 점검하세요');
+    logRun('실행 오류: ' + e.message);
+    notifyTelegramAlert('워크플로우 실행 실패: ' + e.message);
+  }
 }
 
 // ── 2. 협업 상태 전파 (WebSocket → 실제 적용) ──
@@ -3480,6 +3527,85 @@ async function logAudit(resource, action, detail) {
   } catch (e) {}
 }
 
+// ═══ 5차: Agent UX + 모니터링 모듈 ═══
+
+// 1. Agent Activity Feed — 실시간 + 필터
+let feedEvents = [];
+async function loadFeed() {
+  try {
+    const r = await fetch(API_BASE + '/api/events');
+    const j = await r.json();
+    feedEvents = j.success ? (j.events || []) : [];
+  } catch (e) { feedEvents = []; }
+}
+function renderFeed() {
+  const body = document.getElementById('feed-body');
+  const filter = document.getElementById('feed-filter').value;
+  const list = feedEvents.filter(e => !filter || e.action === filter);
+  body.innerHTML = list.length === 0
+    ? '<span style="color:var(--panel-text-faint)">활동 없음</span>'
+    : list.slice(0, 30).map(e => {
+        const color = e.action === 'fail' ? '#ff5d5d' : e.action === 'approve' ? '#d29922' : 'var(--accent)';
+        return '<div style="padding:7px;margin-bottom:5px;background:var(--dark-3);border-radius:8px;font-size:11px;display:flex;justify-content:space-between">' +
+          '<span><span style="color:' + color + ';font-weight:700">' + escapeHtml(e.action) + '</span> ' +
+          '<span style="color:var(--panel-text-dim)">' + escapeHtml(e.resource) + '</span></span>' +
+          '<span style="color:var(--panel-text-faint)">' + new Date(e.created_at).toLocaleTimeString() + '</span></div>';
+      }).join('');
+}
+async function toggleFeed() {
+  const panel = document.getElementById('feed-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') { await loadFeed(); renderFeed(); }
+}
+// WS로 실시간 이벤트 수신 (기존 ws 메시지에 통합 — feed 갱신)
+
+// 2. 신뢰도 표시 — LLM 판단 결과에 confidence
+function renderConfidence(node) {
+  if (!node || !node.confidence) return '';
+  const c = node.confidence;
+  const color = c >= 80 ? 'var(--accent)' : c >= 50 ? '#d29922' : '#ff5d5d';
+  return '<span class="conf-badge" style="color:' + color + '" title="신뢰도">' + c + '%</span>';
+}
+
+// 3. 실패/블로커 텔레그램 알림 — 실행 실패 시 자동
+async function notifyTelegramAlert(message) {
+  try {
+    await fetch(API_BASE + '/api/exec', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ script: 'echo "' + message.slice(0, 80).replace(/"/g, "'") + '"', agent_id: 'alert' }),
+    }).catch(() => {});
+    // 실제 텔레그램 전송은 telegram 노드/게이트웨이 연동 — 여기선 감사 기록
+    await fetch(API_BASE + '/api/audit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actor: 'system', agent_id: '', resource: 'alert', action: 'fail', detail: message }),
+    }).catch(() => {});
+    feedEvents.unshift({ action: 'fail', resource: message.slice(0, 60), created_at: new Date().toISOString() });
+  } catch (e) {}
+}
+
+// 4. 오류 복구 3부 메시지 — 무엇/왜/다음
+function errorRecovery3(what, why, next) {
+  toastHTML('<div style="min-width:280px;border-left:3px solid #ff5d5d;padding-left:10px">' +
+    '<strong style="color:#ff5d5d">' + escapeHtml(what) + '</strong>' +
+    '<div style="margin-top:6px;color:var(--panel-text-dim)">' + escapeHtml(why) + '</div>' +
+    '<div style="margin-top:6px;color:var(--accent)">→ ' + escapeHtml(next) + '</div></div>', 7000);
+}
+
+// 6. 실시간 파이프라인 뷰 — 노드 상태 컬러 강화 (renderCanvas에 이미 exec-badge, status-badge)
+function pipelineStatusBadge(n) {
+  if (n.status === '완료' || n.status === 'done') return '<span class="pipe-badge done">●</span>';
+  if (n.blocked) return '<span class="pipe-badge blocked" title="블로커">⛔</span>';
+  if (n.status === '진행' || n.status === 'running') return '<span class="pipe-badge running">◐</span>';
+  return '<span class="pipe-badge idle">○</span>';
+}
+
+// 8. Scope Boundary — Agent Card 권한 노출 (에이전트 패널에)
+function scopeBoundaryHTML(agent) {
+  const scopes = (agent.scopes || ['execute', 'report']);
+  return '<div style="font-size:10px;color:var(--panel-text-faint);margin-top:4px">권한: ' +
+    scopes.map(s => '<span style="background:var(--dark);border-radius:4px;padding:1px 6px;margin-right:4px">' + escapeHtml(s) + '</span>').join('') + '</div>';
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -3531,6 +3657,11 @@ document.getElementById('market-close').addEventListener('click', () => {
   document.getElementById('market-panel').style.display = 'none';
 });
 document.getElementById('tpl-publish').addEventListener('click', publishTemplate);
+document.getElementById('btn-feed').addEventListener('click', toggleFeed);
+document.getElementById('feed-close').addEventListener('click', () => {
+  document.getElementById('feed-panel').style.display = 'none';
+});
+document.getElementById('feed-filter').addEventListener('change', renderFeed);
 loadAgents();
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;

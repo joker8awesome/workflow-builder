@@ -864,6 +864,27 @@ async function loadFromServer() {
 }
 
 // 서버에 전체 워크플로우 동기화 (디바운스)
+// 오프라인 편집 큐 — 서버 미연결 시 변경 대기
+let offlineQueue = [];
+function queueOfflineSync() {
+  try { offlineQueue = JSON.parse(localStorage.getItem(LS_KEY + '_offline') || '[]'); } catch (e) { offlineQueue = []; }
+  const wf = currentWorkflow();
+  if (wf && !serverOnline) {
+    offlineQueue.push({ wfId: wf.id, ts: Date.now() });
+    localStorage.setItem(LS_KEY + '_offline', JSON.stringify(offlineQueue.slice(-50)));
+  }
+}
+function flushOfflineQueue() {
+  if (!serverOnline) return;
+  try { offlineQueue = JSON.parse(localStorage.getItem(LS_KEY + '_offline') || '[]'); } catch (e) { offlineQueue = []; }
+  if (offlineQueue.length > 0) {
+    const wf = currentWorkflow();
+    if (wf) syncToServer();
+    localStorage.removeItem(LS_KEY + '_offline');
+    console.log('오프라인 편집 ' + offlineQueue.length + '건 동기화');
+    toast('오프라인 편집 ' + offlineQueue.length + '건 동기화됨');
+  }
+}
 function syncToServer() {
   if (!serverOnline) return;
   clearTimeout(syncTimer);
@@ -876,7 +897,7 @@ function syncToServer() {
           body: JSON.stringify({ name: wf.name, data: { nodes: wf.nodes, edges: wf.edges } }),
         });
       }
-    } catch (e) { console.warn('server sync failed', e); }
+    } catch (e) { console.warn('server sync failed', e); queueOfflineSync(); }
   }, 800);
 }
 let store = { workflows: [], activeWorkflowId: null };
@@ -1322,7 +1343,41 @@ function renderInspector() {
       saveStore(true); renderAll();
     });
   } else {
-    body.innerHTML = `<label>워크플로우 이름</label><input id="f-wf-name" value="${escapeHtml(wf.name)}">`;
+    body.innerHTML = `<label>워크플로우 이름</label><input id="f-wf-name" value="${escapeHtml(wf.name)}">
+      <label>자동 실행 (자연어)</label>
+      <div style="display:flex;gap:6px">
+        <input id="f-sched-nl" placeholder="예: 매일 9시" value="" style="flex:1;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px">
+        <button id="f-sched-parse" class="tb-action" style="padding:4px 10px;font-size:11px">변환</button>
+      </div>
+      <label>크론</label><input id="f-sched" value="${escapeHtml(wf.schedule || '')}" placeholder="예: 0 9 * * *">
+      <button id="f-sched-save" class="tb-action" style="width:100%;margin-top:4px;font-size:11px">💾 스케줄 저장</button>`;
+    const schedNl = document.getElementById('f-sched-nl');
+    const schedParse = document.getElementById('f-sched-parse');
+    const schedInput = document.getElementById('f-sched');
+    if (schedNl && schedParse) {
+      schedParse.addEventListener('click', async () => {
+        const text = schedNl.value.trim();
+        if (!text) { toast('자연어 입력 필요'); return; }
+        const r = await fetch(API_BASE + '/api/schedule/parse', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+        }).catch(() => null);
+        if (r && r.ok) {
+          const j = await r.json();
+          if (j.success) { schedInput.value = j.cron; toast('크론: ' + j.cron); }
+          else toast(j.error || '변환 실패');
+        }
+      });
+      const schedSave = document.getElementById('f-sched-save');
+      schedSave.addEventListener('click', async () => {
+        const cron = schedInput.value.trim();
+        await fetch(API_BASE + '/api/workflows/' + wf.id + '/schedule', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cron, trigger_type: cron ? 'cron' : 'manual' }),
+        }).catch(() => {});
+        wf.schedule = cron; saveStore();
+        toast(cron ? '스케줄 저장됨 (' + cron + ')' : '스케줄 해제');
+      });
+    }
     document.getElementById('f-wf-name').addEventListener('input', (e) => {
       wf.name = e.target.value;
       document.getElementById('wf-name').value = wf.name;
@@ -2846,8 +2901,18 @@ function initShareDemo() {
 async function llmDecide(prompt, ctx, model) {
   if (!serverOnline) return null;
   try {
+    // 4: 장기 메모리 주입 — 관련 지식 컨텍스트에 추가
+    let memoryCtx = '';
+    try {
+      const kr = await fetch(API_BASE + '/api/knowledge');
+      const kj = await kr.json();
+      if (kj.success && kj.knowledge && kj.knowledge.length) {
+        memoryCtx = '\n[에이전트 지식] ' + kj.knowledge.slice(0, 3).map(k => k.note).join(' | ');
+      }
+    } catch (e) {}
+    const enhancedPrompt = prompt + memoryCtx;
     // 5: semantic cache 확인 (같은 판단 재사용)
-    const cacheKey = 'DECIDE:' + prompt + ':' + (model || '');
+    const cacheKey = 'DECIDE:' + enhancedPrompt + ':' + (model || '');
     const ch = await fetch(API_BASE + '/api/cache/get', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt: cacheKey, model: model || '' }),
@@ -2858,7 +2923,7 @@ async function llmDecide(prompt, ctx, model) {
     }
     const r = await fetch(API_BASE + '/api/ai/decide', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, context: ctx, model }),
+      body: JSON.stringify({ prompt: enhancedPrompt, context: ctx, model }),
     });
     const j = await r.json();
     if (j.success) {
@@ -3768,6 +3833,7 @@ document.getElementById('test-close').addEventListener('click', () => {
 document.getElementById('test-add').addEventListener('click', addTest);
 document.getElementById('test-run-all').addEventListener('click', runRegressionGate);
 loadAgents();
+setTimeout(() => { if (serverOnline) flushOfflineQueue(); }, 3000);
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;
 showStats = async function() {

@@ -758,6 +758,43 @@ app.delete('/api/tests/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 워크플로우 스케줄/트리거 API ===
+app.post('/api/workflows/:id/schedule', requireAuth, async (req, res) => {
+  try {
+    const { cron, trigger_type } = req.body || {};
+    await pool.query('UPDATE wf_workflows SET schedule = $1, trigger_type = $2 WHERE id = $3',
+      [cron || '', trigger_type || 'manual', req.params.id]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+// 자연어 → cron 변환 (간단 파서)
+app.post('/api/schedule/parse', async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    const t = String(text || '').trim().toLowerCase();
+    let cron = '';
+    if (/매일|daily|every day/.test(t)) cron = '0 9 * * *';
+    else if (/매시|every hour/.test(t)) cron = '0 * * * *';
+    else if (/매주|weekly/.test(t)) cron = '0 9 * * 1';
+    else if (/매월|monthly/.test(t)) cron = '0 9 1 * *';
+    else if (/분마다|every .*min/.test(t)) { const m = t.match(/(\d+)\s*분/); cron = '*/' + (m ? m[1] : 5) + ' * * * *'; }
+    if (!cron) return res.json({ success: false, error: '인식 실패 — 예: 매일 9시, 매시, 매주' });
+    res.json({ success: true, cron });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+// 파일 감지 트리거 — 워크스페이스 새 파일 확인 (간단: 최근 파일 목록)
+app.post('/api/workflows/:id/run', async (req, res) => {
+  try {
+    const { trigger } = req.body || {};
+    const { rows } = await pool.query('SELECT id FROM wf_workflows WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success: false, error: 'not found' });
+    // 실행 요청 기록 (오케스트레이터 실행은 클라이언트가)
+    await pool.query('INSERT INTO audit_logs (actor, resource, action, detail) VALUES ($1,$2,$3,$4)',
+      ['system', req.params.id, 'run', 'trigger: ' + (trigger || 'manual')]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

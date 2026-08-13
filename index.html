@@ -267,6 +267,63 @@
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
   }
+
+  /* ═══ 모바일 최적화 ═══ */
+  #mobile-actions{display:none}
+  .mm-item{display:block;width:100%;text-align:left;padding:12px 14px;border:none;background:none;color:var(--panel-text);cursor:pointer;font-size:14px;border-radius:10px}
+  .mm-item:hover{background:var(--dark-3);color:var(--accent)}
+
+  @media (max-width: 768px){
+    /* 상단바 축소: wf-name/검색은 숨기고 나머지 버튼은 하단으로 */
+    #topbar{height:48px;padding-inline:10px;gap:8px}
+    #topbar input#wf-name{display:none}
+    #topbar input#wf-search{display:none}
+    #topbar button:not(#sidebar-toggle){display:none}
+    #sidebar-toggle{font-size:18px;padding:8px 10px}
+
+    /* 하단 고정 액션 바 */
+    #mobile-actions{
+      display:flex;position:fixed;bottom:0;left:0;right:0;z-index:55;
+      background:color-mix(in srgb, var(--dark-2) 92%, transparent);
+      backdrop-filter:blur(10px);
+      border-top:1px solid var(--dark-border);
+      padding:8px 10px calc(8px + env(safe-area-inset-bottom));
+      gap:8px;justify-content:space-between;
+    }
+    #mobile-actions button{
+      flex:1;padding:12px 6px;font-size:12px;white-space:nowrap;
+      background:var(--dark-3);border:1px solid var(--dark-border);
+      color:var(--panel-text);border-radius:10px;cursor:pointer;
+      min-height:44px;  /* 터치 최적 크기 */
+    }
+    #mobile-actions button:active{background:var(--accent-soft);color:var(--accent)}
+    #mobile-actions #m-btn-run{background:var(--accent);color:#04100a;font-weight:700;border-color:var(--accent)}
+
+    /* 캔버스 하단 여백 — 하단바에 가려지지 않게 */
+    #canvas-wrap{margin-bottom:0}
+    #app{min-height:0}
+
+    /* 인스펙터 — 하단 시트 스타일 */
+    #inspector{
+      width:100%;height:60vh;top:auto;bottom:0;
+      border-radius:16px 16px 0 0;
+      border-left:none;border-top:1px solid var(--dark-border);
+    }
+    #inspector{translate:0 100%}
+    #inspector.open{translate:0 0}
+
+    /* 사이드바 — 전체 높이 */
+    #sidebar{width:240px;top:0;height:100%}
+
+    /* 미니맵 — 하단바 위로 */
+    #minimap{bottom:70px;right:12px;width:130px;height:90px}
+
+    /* 토스트 — 하단바 위 */
+    #toast-container{bottom:70px}
+
+    /* 실행 상태 바 — 하단바 위 */
+    #run-status-bar{bottom:64px}
+  }
   /* 다크 스크롤바 */
   ::-webkit-scrollbar{width:10px;height:10px}
   ::-webkit-scrollbar-track{background:transparent}
@@ -442,6 +499,27 @@
         <button id="run-close" class="tb-action">닫기</button>
       </div>
     </div>
+  </div>
+  <!-- 모바일 하단 액션 바 -->
+  <div id="mobile-actions">
+    <button id="m-btn-run" class="tb-action">▶ 실행</button>
+    <button id="m-btn-align" class="tb-action">정렬</button>
+    <button id="m-btn-ai" class="tb-action">✨ AI</button>
+    <button id="m-btn-png" class="tb-action">SVG</button>
+    <button id="m-btn-md" class="tb-action">MD</button>
+    <button id="m-btn-stats" class="tb-action">통계</button>
+    <button id="m-btn-more" class="tb-action">•••</button>
+  </div>
+  <!-- 모바일 더보기 메뉴 -->
+  <div id="mobile-menu" style="display:none;position:fixed;bottom:70px;right:12px;z-index:80;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:14px;padding:10px;min-width:180px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <button class="mm-item" id="mm-group">그룹</button>
+    <button class="mm-item" id="mm-template">템플릿</button>
+    <button class="mm-item" id="mm-share">공유</button>
+    <button class="mm-item" id="mm-version">버전</button>
+    <button class="mm-item" id="mm-export">내보내기</button>
+    <button class="mm-item" id="mm-import">가져오기</button>
+    <button class="mm-item" id="mm-lock">🔒 잠금</button>
+    <button class="mm-item" id="mm-fav">☆ 즐겨찾기</button>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -2172,6 +2250,39 @@ function attachNodeTouch(node) {
   if (port) attachTouchConnect(port, node.id);
   attachTouchGestures(el, node);
 }
+
+// === 모바일 하단 바 이벤트 ===
+document.getElementById('m-btn-run').addEventListener('click', () => {
+  if (execState.running) { toast('이미 실행 중'); return; }
+  executeWorkflow();
+});
+document.getElementById('m-btn-align').addEventListener('click', autoAlign);
+document.getElementById('m-btn-ai').addEventListener('click', () => {
+  document.getElementById('ai-panel').style.display = 'block';
+  document.getElementById('ai-prompt').focus();
+});
+document.getElementById('m-btn-png').addEventListener('click', exportPNG);
+document.getElementById('m-btn-md').addEventListener('click', exportMarkdown);
+document.getElementById('m-btn-stats').addEventListener('click', showStats);
+document.getElementById('m-btn-more').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById('mobile-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#mobile-menu') && !e.target.closest('#m-btn-more')) {
+    document.getElementById('mobile-menu').style.display = 'none';
+  }
+});
+// 더보기 메뉴 항목
+document.getElementById('mm-group').addEventListener('click', () => { toggleGroup(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-template').addEventListener('click', () => { document.getElementById('template-panel').style.display = 'block'; document.getElementById('sidebar').classList.add('open'); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-share').addEventListener('click', () => { shareWorkflow(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-version').addEventListener('click', () => { showVersions(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-export').addEventListener('click', () => { document.getElementById('btn-export').click(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-import').addEventListener('click', () => { document.getElementById('btn-import').click(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-lock').addEventListener('click', () => { toggleLockMode(); document.getElementById('mobile-menu').style.display = 'none'; });
+document.getElementById('mm-fav').addEventListener('click', () => { toggleFav(); document.getElementById('mobile-menu').style.display = 'none'; });
 
 // === 초기화 ===
 loadStore();

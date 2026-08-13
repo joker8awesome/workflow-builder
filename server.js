@@ -35,14 +35,33 @@ const pool = new Pool({
 
 const PORT = process.env.PORT || 3737;
 
-// CORS — 단일 HTML 파일(file://)에서 접근 허용
+// CORS — 배포 시 특정 출처 제한, 로컬은 전체 허용
+const ALLOWED_ORIGINS = (process.env.WF_ALLOWED_ORIGINS || '*').split(',').map(s => s.trim());
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes('*') || (origin && ALLOWED_ORIGINS.includes(origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// 간단한 인증 — 환경변수 WF_ACCESS_TOKEN 설정 시 편집 API에 토큰 요구
+const ACCESS_TOKEN = process.env.WF_ACCESS_TOKEN || null;
+function requireAuth(req, res, next) {
+  if (!ACCESS_TOKEN) return next(); // 미설정 시 인증 없음 (로컬)
+  const auth = req.headers.authorization || '';
+  if (auth === 'Bearer ' + ACCESS_TOKEN) return next();
+  return res.status(401).json({ success: false, error: 'unauthorized' });
+}
+// 편집(mutation) API에만 인증 적용
+app.post('/api/workflows', requireAuth);
+app.put('/api/workflows/:id', requireAuth);
+app.delete('/api/workflows/:id', requireAuth);
+app.post('/api/workflows/:id/versions', requireAuth);
+app.post('/api/workflows/:id/logs', requireAuth);
 
 // 목록
 app.get('/api/workflows', async (req, res) => {
@@ -235,6 +254,43 @@ app.get('/api/workflows/:id/logs', async (req, res) => {
     );
     res.json({ success: true, logs: rows });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === 실행 통계 API ===
+app.get('/api/stats', async (req, res) => {
+  try {
+    const wf = await pool.query('SELECT COUNT(*) AS cnt FROM wf_workflows');
+    const ver = await pool.query('SELECT COUNT(*) AS cnt FROM wf_versions');
+    const logs = await pool.query('SELECT COUNT(*) AS cnt FROM wf_runlogs');
+    const recent = await pool.query(
+      'SELECT wf_id, run_path, run_at FROM wf_runlogs ORDER BY run_at DESC LIMIT 10'
+    );
+    res.json({
+      success: true,
+      stats: {
+        workflows: wf.rows[0].cnt,
+        versions: ver.rows[0].cnt,
+        runs: logs.rows[0].cnt,
+        recentRuns: recent.rows,
+      },
+    });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === DB 백업 (pg_dump) ===
+app.get('/api/backup', async (req, res) => {
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync(
+      '/usr/lib/postgresql/17/bin/pg_dump -h /opt/data/pgdata -U hermes -d odds -t wf_workflows -t wf_versions -t wf_runlogs',
+      { encoding: 'utf-8', env: { ...process.env, PATH: '/usr/lib/postgresql/17/bin:' + process.env.PATH } }
+    );
+    res.setHeader('Content-Type', 'application/sql');
+    res.setHeader('Content-Disposition', 'attachment; filename="workflow_backup_' + new Date().toISOString().slice(0,10) + '.sql"');
+    res.send(out);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 // === LLM 프록시 — 워크플로우 생성 ===

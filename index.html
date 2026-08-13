@@ -65,7 +65,11 @@
     </aside>
   </div>
 <script>
-const LS_KEY = 'wf_app_data';
+// 마이그레이션 대비: 같은 도메인 하위 슬러그에서도 기존 사이트와
+// localStorage 충돌 없이 독립 동작하도록 경로 기반 키 사용
+const LS_KEY = 'wf_app_' + (location.pathname.split('/').filter(Boolean).join('_') || 'root');
+// 백업 키 (JSON 파손 대비)
+const LS_BACKUP_KEY = LS_KEY + '_backup';
 let store = { workflows: [], activeWorkflowId: null };
 let saveTimer = null;
 
@@ -102,8 +106,18 @@ function loadStore() {
     }
   } catch (e) {
     console.warn('load failed', e);
-    const wf = defaultWorkflow('새 워크플로우');
-    store = { workflows: [wf], activeWorkflowId: wf.id };
+    // 백업에서 복구 시도
+    try {
+      const backup = localStorage.getItem(LS_BACKUP_KEY);
+      if (backup) {
+        store = JSON.parse(backup);
+        if (!Array.isArray(store.workflows)) store.workflows = [];
+      }
+    } catch (e2) { console.warn('backup load failed', e2); }
+    if (!store.workflows || store.workflows.length === 0) {
+      const wf = defaultWorkflow('새 워크플로우');
+      store = { workflows: [wf], activeWorkflowId: wf.id };
+    }
   }
 }
 
@@ -112,6 +126,7 @@ function saveStore(immediate) {
   const write = () => {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(store));
+      localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(store));
       const el = document.getElementById('save-status');
       if (el) { el.textContent = '저장됨'; setTimeout(() => el.textContent = '', 2000); }
     } catch (e) {

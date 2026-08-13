@@ -55,3 +55,35 @@ workflow-builder/
 ├── docs/superpowers/specs/2026-08-13-workflow-builder-design.md  ← 설계 명세
 └── .hermes/plans/2026-08-13_142527-workflow-builder.md           ← 구현 계획
 ```
+
+---
+
+## 서버 연동 (2단계 확장)
+
+### 구성
+- **API 서버**: `server.js` (Express + PostgreSQL) — 포트 3737
+- **DB**: `wf_workflows` 테이블 (id, name, data JSONB, updated_at) — odds DB 내
+- **동작**: index.html이 서버에 접속 가능하면 서버에서 로드 + 변경 시 자동 동기화, 서버가 없으면 localStorage만으로 동작 (하위 호환)
+
+### 서버 실행
+```bash
+cd /opt/data/projects/workflow-builder
+node server.js          # http://localhost:3737
+```
+
+### API
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| GET | /api/workflows | 목록 |
+| GET | /api/workflows/:id | 상세 (전체 데이터) |
+| POST | /api/workflows | 생성 (upsert) |
+| PUT | /api/workflows/:id | 저장 (전체 덮어쓰기) |
+| DELETE | /api/workflows/:id | 삭제 |
+
+### 접속 URL 변경 (필요 시)
+index.html의 `API_BASE` 상수를 배포 환경에 맞게 수정:
+```js
+const API_BASE = (window.__WF_API__ || 'http://localhost:3737');
+```
+- 배포 시 `window.__WF_API__ = 'https://도메인/api'` 설정 가능
+- 하위 슬러그 배포 시 서버 라우트와 슬러그 경로 정렬 필요

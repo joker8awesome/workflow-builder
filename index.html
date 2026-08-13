@@ -688,12 +688,17 @@ function startDrag(e, node) {
 // === EdgeLayer ===
 function renderEdges() {
   const svg = document.getElementById('edges');
+  // defs(marker)는 유지하고 line/text만 제거 — 화살표 보존
+  const defs = svg.querySelector('defs');
   svg.innerHTML = '';
+  if (defs) svg.appendChild(defs);
   const wf = currentWorkflow();
   if (!wf) return;
+  // O(1) 노드 조회용 Map — 대규모 워크플로우 성능
+  const nodeMap = new Map(wf.nodes.map(n => [n.id, n]));
   wf.edges.forEach(e => {
-    const from = wf.nodes.find(n => n.id === e.from);
-    const to = wf.nodes.find(n => n.id === e.to);
+    const from = nodeMap.get(e.from);
+    const to = nodeMap.get(e.to);
     if (!from || !to) { console.warn('orphan edge', e.id); return; }
     const x1 = from.x + 90, y1 = from.y + 26;
     const x2 = to.x + 90, y2 = to.y + 26;
@@ -746,13 +751,14 @@ document.addEventListener('mousedown', (e) => {
     window.removeEventListener('mouseup', up);
   }
   function move(ev) {
-    // 고무줄 임시 엣지
+    // 고무줄 임시 엣지 — 캔버스 좌표계로 변환 (줌/팬 반영)
     const from = currentWorkflow().nodes.find(n => n.id === fromId);
     if (from) {
+      const rect = document.getElementById('canvas-wrap').getBoundingClientRect();
       tempEdge = {
         x1: from.x + 90, y1: from.y + 26,
-        x2: ev.clientX - (document.getElementById('canvas-wrap').getBoundingClientRect().left - panX) / zoom - 90 + 90,
-        y2: ev.clientY - (document.getElementById('canvas-wrap').getBoundingClientRect().top - panY) / zoom - 26 + 26
+        x2: (ev.clientX - rect.left - panX) / zoom,
+        y2: (ev.clientY - rect.top - panY) / zoom
       };
       renderTempEdge();
     }
@@ -1348,8 +1354,12 @@ function showVersions() {
     toast('버전 v1 저장됨');
     return;
   }
-  const rows = versions.map((v, i) => '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--panel-border)"><span>v' + (i+1) + ' · ' + new Date(v.t).toLocaleString() + '</span><button class="tb-action" onclick="restoreVersion(' + i + ')">복원</button></div>').join('');
+  const rows = versions.map((v, i) => '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--panel-border)"><span>v' + (i+1) + ' · ' + new Date(v.t).toLocaleString() + '</span><button class="tb-action ver-restore" data-idx="' + i + '">복원</button></div>').join('');
   toastHTML('<div style="min-width:320px"><strong style="display:block;margin-bottom:8px">버전 이력 (' + versions.length + ')</strong>' + rows + '</div>', 6000);
+  // 이벤트 위임 — 인라인 onclick 대신
+  document.querySelectorAll('.toast .ver-restore').forEach(btn => {
+    btn.addEventListener('click', () => restoreVersion(+btn.dataset.idx));
+  });
 }
 function restoreVersion(idx) {
   const wf = currentWorkflow();

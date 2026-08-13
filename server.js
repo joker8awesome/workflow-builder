@@ -90,6 +90,15 @@ app.delete('/api/workflows/:id', async (req, res) => {
   }
 });
 
+// HTML 이스케이프 (XSS 방지)
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// JSON을 <script> 안전하게 직렬화 — </script> 탈출 방지
+function safeJson(obj) {
+  return JSON.stringify(obj).replace(/</g, '\\u003c');
+}
+
 // 공유 보기 라우트 — /wf/:id (읽기 전용 뷰)
 app.get('/wf/:id', async (req, res) => {
   try {
@@ -100,7 +109,7 @@ app.get('/wf/:id', async (req, res) => {
       return res.status(404).send('<h2 style="font-family:system-ui;background:#0a0d10;color:#e8eaed;height:100vh;display:flex;align-items:center;justify-content:center;margin:0">워크플로우를 찾을 수 없습니다</h2>');
     }
     const wf = rows[0];
-    res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${wf.name} — 워크플로우 공유</title>
+    res.send(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(wf.name)} — 워크플로우 공유</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:system-ui,sans-serif;background:#0a0d10;color:#e8eaed;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -111,10 +120,10 @@ app.get('/wf/:id', async (req, res) => {
   .node .nicon{width:26px;height:26px;border-radius:8px;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px}
   .node .nlabel{font-size:14px;font-weight:600}
 </style></head><body>
-<header><strong>🔗 공유 워크플로우</strong><span style="color:#9aa3ad;font-size:13px">${wf.name}</span></header>
+<header><strong>🔗 공유 워크플로우</strong><span style="color:#9aa3ad;font-size:13px">${esc(wf.name)}</span></header>
 <div id="canvas"></div>
 <script>
-  const WF = ${JSON.stringify(wf.data || { nodes: [], edges: [] })};
+  const WF = ${safeJson(wf.data || { nodes: [], edges: [] })};
   const canvas = document.getElementById('canvas');
   (WF.nodes || []).forEach(n => {
     const el = document.createElement('div');
@@ -122,7 +131,7 @@ app.get('/wf/:id', async (req, res) => {
     el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
     const icon = { start:'▶', process:'▢', decision:'◇', end:'●' }[n.type] || '▢';
     const color = { start:'#2ea043', process:'#1f6feb', decision:'#d29922', end:'#d1242f' }[n.type] || '#1f6feb';
-    el.innerHTML = '<span class="nicon" style="background:' + color + '">' + icon + '</span><span class="nlabel">' + (n.label||'') + '</span>';
+    el.innerHTML = '<span class="nicon" style="background:' + color + '">' + icon + '</span><span class="nlabel">' + esc(n.label||'') + '</span>';
     canvas.appendChild(el);
   });
 </script>

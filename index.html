@@ -8,6 +8,26 @@
 /* ═══ 최신 CSS 리빌드 — 디자인 토큰 + 현대 색상 공간 ═══ */
 @layer reset, tokens, layout, components, utilities;
 
+/* Isamanru font (noonnu free commercial, GongGames) */
+@font-face {
+  font-family: 'Isamanru';
+  src: url('fonts/Isamanru-Light.woff') format('woff');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Isamanru';
+  src: url('fonts/Isamanru-Medium.woff') format('woff');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Isamanru';
+  src: url('fonts/Isamanru-Bold.woff') format('woff');
+  font-weight: 700;
+  font-display: swap;
+}
+
 @layer tokens {
   :root {
     /* ── 강조색: #00ff87 민트 그린 ── */
@@ -50,7 +70,7 @@
     --shadow-md: 0 6px 24px rgba(0,0,0,.28);
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
     --topbar-h: 52px; --sidebar-w: 240px; --inspector-w: 280px;
-    --font: system-ui, 'Pretendard', -apple-system, sans-serif;
+    --font: 'Isamanru', system-ui, -apple-system, sans-serif;
   }
 }
 
@@ -173,7 +193,7 @@
     font-size:14px;flex-shrink:0;aspect-ratio:1;
   }
   #canvas .node .nlabel{
-    font-size:14px;font-weight:600;
+    font-size:14px;font-weight:700;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
     text-wrap:balance;
   }

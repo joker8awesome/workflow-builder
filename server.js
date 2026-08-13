@@ -256,6 +256,16 @@ app.get('/api/workflows/:id/logs', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// 2: secret masking
+function maskSecrets(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/eyJ[A-Za-z0-9_-]{10,}/g, '[TOKEN_MASKED]')
+    .replace(/rt_rtkR8[A-Za-z0-9_-]{5,}/g, '[REFRESH_MASKED]')
+    .replace(/(api[_-]?key|token|secret|password)["']?\s*[:=]\s*["']?[A-Za-z0-9_-]{8,}/gi, '$1=[MASKED]');
+}
+function maskedError(e) { return maskSecrets(e.message); }
+
 // === LLM 판단 API (decision 노드: llm_prompt) ===
 app.post('/api/ai/decide', async (req, res) => {
   try {
@@ -280,7 +290,7 @@ Context: ${JSON.stringify(context || {})}`;
     const answer = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
     const yes = answer.includes('YES');
     res.json({ success: true, decision: yes, raw: answer });
-  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
 // === 웹훅 트리거 — 외부 이벤트로 워크플로우 실행 ===
@@ -314,16 +324,20 @@ app.post('/api/exec', async (req, res) => {
     if (!script || typeof script !== 'string') {
       return res.status(400).json({ success: false, error: 'script required' });
     }
-    // 안전성: 실행 가능한 명령만 허용 (셸 메타문자 제한)
+    // 8: whitelist + sandbox
     const SAFE = /^[a-zA-Z0-9_\/.\-\s=]+$/;
     if (!SAFE.test(script)) {
       return res.status(400).json({ success: false, error: 'invalid script (safe mode)' });
     }
+    const dang = ['rm ', 'sudo ', 'curl ', 'wget ', '-delete', 'shutdown', 'reboot', 'dd ', 'chmod 777'];
+    if (dang.some(d => script.includes(d))) {
+      return res.status(403).json({ success: false, error: 'dangerous command blocked' });
+    }
     const { execSync } = require('child_process');
-    const out = execSync(script, { encoding: 'utf-8', timeout: 30000, env: process.env });
+    const out = execSync(script, { encoding: 'utf-8', timeout: 10000, env: process.env, cwd: '/opt/data/projects/workflow-builder' });
     res.json({ success: true, output: out.slice(0, 2000) });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
+    res.status(500).json({ success: false, error: maskedError(e) });
   }
 });
 

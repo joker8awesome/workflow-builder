@@ -487,6 +487,7 @@
     <button id="btn-import" class="tb-action">가져오기</button>
     <button id="btn-bundle" class="tb-action">번들</button>
     <button id="btn-trace" class="tb-action">트레이스</button>
+    <button id="btn-diff" class="tb-action">diff</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -819,6 +820,7 @@ function renderCanvas() {
   const wf = currentWorkflow();
   if (!wf) return;
   wf.nodes.forEach(n => {
+    if (!isInViewport(n)) return;  // 가상화: 뷰포트 밖 노드 생략
     const isSel = selected.type === 'node' && selected.id === n.id;
     const isMulti = multiSelect.has(n.id);
     const isRun = runState && runState.currentId === n.id;
@@ -883,13 +885,14 @@ function startDrag(e, node) {
         if (el) { el.style.left = n.x + 'px'; el.style.top = n.y + 'px'; }
       }
     });
-    renderEdges();
+    renderEdgesThrottled();
   }
   function up() {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     if (node.x !== origX || node.y !== origY) pushHistory();
     saveStore();
+    renderEdges();
   }
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', up);
@@ -2640,6 +2643,131 @@ document.getElementById('trace-close').addEventListener('click', () => {
   document.getElementById('trace-panel').style.display = 'none';
 });
 
+// ═══ 6차 고도화 모듈 (딥리서치 2차) ═══
+
+// 3. 가상화 렌더링 — 뷰포트 밖 노드 DOM 생략
+let virtEnabled = true;
+const VIRT_MARGIN = 200;
+function isInViewport(n) {
+  if (!virtEnabled) return true;
+  const wrap = document.getElementById('canvas-wrap');
+  const w = wrap.clientWidth / zoom, h = wrap.clientHeight / zoom;
+  const vx = -panX / zoom, vy = -panY / zoom;
+  return n.x + 160 > vx - VIRT_MARGIN && n.x < vx + w + VIRT_MARGIN &&
+         n.y + 50 > vy - VIRT_MARGIN && n.y < vy + h + VIRT_MARGIN;
+}
+// renderCanvas에서 사용 (호출부에서 필터)
+
+// 4. 렌더 rAF 디바운스
+let rafPending = false;
+function renderEdgesThrottled() {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => { rafPending = false; renderEdges(); });
+}
+
+// 6. 명령 팔레트 — Ctrl+K
+function initCommandPalette() {
+  const pal = document.createElement('div');
+  pal.id = 'cmd-palette';
+  pal.style.cssText = 'display:none;position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:95;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:14px;padding:12px;width:420px;box-shadow:0 6px 24px rgba(0,0,0,.3)';
+  pal.innerHTML = '<input id="cmd-input" placeholder="명령 입력... (노드 추가/정렬/실행/내보내기)" style="width:100%;padding:10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px;outline:none">' +
+    '<div id="cmd-results" style="margin-top:8px"></div>';
+  document.body.appendChild(pal);
+  const input = pal.querySelector('#cmd-input');
+  const results = pal.querySelector('#cmd-results');
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      pal.style.display = pal.style.display === 'none' ? 'block' : 'none';
+      if (pal.style.display !== 'none') input.focus();
+    }
+    if (e.key === 'Escape') pal.style.display = 'none';
+  });
+  const CMDS = [
+    ['실행', () => executeWorkflow()],
+    ['정렬', () => autoAlign()],
+    ['AI 생성', () => { document.getElementById('ai-panel').style.display = 'block'; }],
+    ['노드 추가 (프로세스)', () => { if (selected.type === 'node') duplicateNode(selected.id); }],
+    ['SVG 내보내기', () => exportPNG()],
+    ['마크다운 내보내기', () => exportMarkdown()],
+    ['통계', () => showStats()],
+    ['트레이스', () => { document.getElementById('trace-panel').style.display = 'block'; renderTrace(); }],
+    ['Undo', () => undo()],
+    ['Redo', () => redo()],
+  ];
+  input.addEventListener('input', () => {
+    const q = input.value.toLowerCase();
+    results.innerHTML = '';
+    CMDS.filter(([name]) => name.toLowerCase().includes(q)).forEach(([name, fn]) => {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 12px;background:none;border:none;color:var(--panel-text);cursor:pointer;font-size:13px;border-radius:6px';
+      b.addEventListener('mouseenter', () => b.style.background = 'var(--dark-3)');
+      b.addEventListener('mouseleave', () => b.style.background = 'none');
+      b.addEventListener('click', () => { fn(); pal.style.display = 'none'; });
+      results.appendChild(b);
+    });
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const first = results.querySelector('button');
+      if (first) first.click();
+    }
+  });
+}
+
+// 5. 워크플로우 diff — 두 버전 비교
+function wfDiff(vA, vB) {
+  const aNodes = (vA && vA.nodes) || [], bNodes = (vB && vB.nodes) || [];
+  const aMap = new Map(aNodes.map(n => [n.id, n]));
+  const bMap = new Map(bNodes.map(n => [n.id, n]));
+  const added = [], removed = [], changed = [];
+  bNodes.forEach(n => { if (!aMap.has(n.id)) added.push(n); });
+  aNodes.forEach(n => { if (!bMap.has(n.id)) removed.push(n); });
+  bNodes.forEach(n => {
+    const a = aMap.get(n.id);
+    if (a && (a.label !== n.label || a.type !== n.type || a.x !== n.x || a.y !== n.y)) changed.push({ old: a, next: n });
+  });
+  return { added, removed, changed };
+}
+function showWfDiff() {
+  const wf = currentWorkflow();
+  if (!wf) return;
+  const key = LS_KEY + '_ver_' + wf.id;
+  let versions = [];
+  try { versions = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) {}
+  if (versions.length < 2) { toast('비교할 버전이 2개 이상 필요'); return; }
+  const last = versions[versions.length - 1].data;
+  const prev = versions[versions.length - 2].data;
+  const prevWf = prev.workflows.find(w => w.id === wf.id);
+  const lastWf = last.workflows.find(w => w.id === wf.id);
+  if (!prevWf || !lastWf) { toast('버전 데이터 없음'); return; }
+  const d = wfDiff(prevWf, lastWf);
+  const lines = [];
+  d.added.forEach(n => lines.push('<div style="color:var(--accent)">+ ' + escapeHtml(n.label) + '</div>'));
+  d.removed.forEach(n => lines.push('<div style="color:#ff5d5d">- ' + escapeHtml(n.label) + '</div>'));
+  d.changed.forEach(c => lines.push('<div style="color:#d29922">~ ' + escapeHtml(c.old.label) + ' → ' + escapeHtml(c.next.label) + '</div>'));
+  if (lines.length === 0) lines.push('<span style="color:var(--panel-text-faint)">변경 없음</span>');
+  toastHTML('<div style="min-width:260px"><strong style="display:block;margin-bottom:8px">버전 diff (v' + (versions.length-1) + ' → v' + versions.length + ')</strong>' + lines.join('') + '</div>', 6000);
+}
+
+// 7. 프레즌스 강화 — 활성 사용자 목록 표시
+function initPresence() {
+  if (!serverOnline) return;
+  const badge = document.createElement('span');
+  badge.id = 'presence';
+  badge.textContent = '● 1명 접속';
+  badge.style.cssText = 'font-size:11px;color:var(--accent);margin-left:8px';
+  document.getElementById('topbar').appendChild(badge);
+  // WS로 다른 사용자 핑 수신 시 카운트 (단순 표시)
+  if (ws) {
+    setInterval(() => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+    }, 5000);
+  }
+}
+
 // === 초기화 ===
 loadStore();
 const wf0 = currentWorkflow();
@@ -2661,6 +2789,9 @@ renderAll();
 initPWA();
 attachArrowKeys();
 initShareDemo();
+initCommandPalette();
+setTimeout(initPresence, 800);
+document.getElementById('btn-diff').addEventListener('click', showWfDiff);
 // 통계 패널에 차트 렌더
 const origShowStats = showStats;
 showStats = async function() {

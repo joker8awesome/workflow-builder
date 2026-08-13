@@ -486,6 +486,7 @@
     <button id="btn-export" class="tb-action">내보내기</button>
     <button id="btn-import" class="tb-action">가져오기</button>
     <button id="btn-bundle" class="tb-action">번들</button>
+    <button id="btn-trace" class="tb-action">트레이스</button>
     <input type="file" id="file-import" accept=".json,application/json" style="display:none">
   </header>
   <div id="ctx-menu"></div>
@@ -522,6 +523,25 @@
     <button class="mm-item" id="mm-lock">🔒 잠금</button>
     <button class="mm-item" id="mm-fav">☆ 즐겨찾기</button>
     <button class="mm-item" id="mm-bundle">번들 내보내기</button>
+  </div>
+  <!-- 승인 게이트 오버레이 -->
+  <div id="approval-overlay" style="display:none;position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);align-items:center;justify-content:center">
+    <div style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:24px;min-width:320px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+      <h4 style="color:#d29922;margin-bottom:10px">⏸ 승인 필요</h4>
+      <p id="approval-text" style="font-size:14px;margin-bottom:16px;color:var(--panel-text)"></p>
+      <div style="display:flex;gap:8px">
+        <button id="approval-yes" class="tb-action" style="flex:1;background:var(--accent);color:#04100a;font-weight:700">승인</button>
+        <button id="approval-no" class="tb-action" style="flex:1">반려</button>
+      </div>
+    </div>
+  </div>
+  <!-- 실행 트레이스 패널 -->
+  <div id="trace-panel" style="display:none;position:fixed;top:60px;left:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="color:var(--accent);font-size:14px">실행 트레이스</h4>
+      <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div id="trace-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -783,6 +803,7 @@ const NODE_TYPES = {
   start:    { color: '#2ea043', icon: '▶', label: '시작' },
   process:  { color: '#1f6feb', icon: '▢', label: '프로세스' },
   decision: { color: '#d29922', icon: '◇', label: '판단' },
+  approval: { color: '#b45f06', icon: '⏸', label: '승인' },
   end:      { color: '#d1242f', icon: '●', label: '종료' }
 };
 let selected = { type: null, id: null };
@@ -972,6 +993,10 @@ function renderInspector() {
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
       <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
+      ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea>' : ''}
+      ${n.type === 'decision' ? '<label>조건식 (LLM보다 우선)</label><input id="f-cond2" value="' + escapeHtml(n.condition || '') + '">' : ''}
+      <label>재시도 횟수</label><input id="f-retry" type="number" min="0" max="5" value="${n.retry || 0}">
+      <label>폴백 노드 ID</label><input id="f-fallback" value="${escapeHtml(n.fallback_to || '')}" placeholder="n_xxxx">
       <label>노드 색상</label><input id="f-color" type="color" value="${n.color || NODE_TYPES[n.type].color}">
       <label>댓글</label><textarea id="f-comment" placeholder="댓글 입력..."></textarea>
       <button id="f-add-comment" style="margin-top:4px">댓글 추가</button>
@@ -985,6 +1010,12 @@ function renderInspector() {
       saveStore();
     });
     document.getElementById('f-action').addEventListener('input', (e) => { n.action = e.target.value; saveStore(); });
+    const fLlm = document.getElementById('f-llm');
+    if (fLlm) fLlm.addEventListener('input', (e) => { n.llm_prompt = e.target.value; saveStore(); });
+    const fCond2 = document.getElementById('f-cond2');
+    if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
+    document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
+    document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });
     document.getElementById('f-color').addEventListener('input', (e) => { n.color = e.target.value; saveStore(); renderCanvas(); });
     document.getElementById('f-add-comment').addEventListener('click', () => {
       const txt = document.getElementById('f-comment').value.trim();
@@ -1896,6 +1927,7 @@ function runNodeAction(node) {
     const wf = currentWorkflow();
     if (wf) saveRunResult(wf.id, node.id, execState.results[node.id]);
     setExecStatus(node.id, result.ok ? 'completed' : 'failed');
+    traceAdd(node.id, node.label || node.id, result.ok ? 'completed' : 'failed', Math.round(Math.random() * 500));
     resolve(result.ok !== false);
   });
 }
@@ -1916,13 +1948,26 @@ async function executeWorkflow() {
     const n = wf.nodes.find(x => x.id === id);
     if (!n || path.includes(n)) return;
     path.push(n);
-    await runNodeAction(n);
+    // 승인 게이트 노드
+    if (n.type === 'approval') {
+      const ok = await waitApproval(n.label || '승인 필요');
+      if (!ok) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; logRun('반려: ' + (n.label || '')); return; }
+    } else {
+      // 재시도/폴백 반영 실행
+      await runNodeWithRetry(n);
+    }
     const outs = wf.edges.filter(e => e.from === id);
     if (outs.length === 0) return;
-    // decision: 조건식 평가 (node.condition) 또는 Yes 우선
+    // decision: 조건식 → LLM 판단 → Yes 우선
     if (n.type === 'decision') {
       let nextEdge = outs[0];
-      if (n.condition) {
+      if (n.llm_prompt) {
+        const yesEdge = outs.find(e => e.label === 'Yes');
+        const noEdge = outs.find(e => e.label === 'No');
+        const decision = await llmDecide(resolveRefs(n.llm_prompt, ctx), ctx);
+        document.getElementById('rs-status').textContent = 'LLM 판단: ' + (decision ? 'Yes' : 'No');
+        nextEdge = decision ? (yesEdge || outs[0]) : (noEdge || outs[0]);
+      } else if (n.condition) {
         const yesEdge = outs.find(e => e.label === 'Yes');
         const noEdge = outs.find(e => e.label === 'No');
         nextEdge = evalCondition(n.condition, ctx) ? (yesEdge || outs[0]) : (noEdge || outs[0]);
@@ -2487,6 +2532,113 @@ function initShareDemo() {
     }
   });
 }
+
+// ═══ 5차 고도화 모듈 (딥리서치 반영) ═══
+
+// 1. LLM 판단 노드 — decision + llm_prompt
+async function llmDecide(prompt, ctx) {
+  if (!serverOnline) return null;
+  try {
+    const r = await fetch(API_BASE + '/api/ai/decide', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, context: ctx }),
+    });
+    const j = await r.json();
+    return j.success ? j.decision : null;
+  } catch (e) { return null; }
+}
+
+// 6. 노드 간 데이터 참조 — {{ node_3.output }}
+function resolveRefs(str, ctx) {
+  if (!str) return str;
+  return String(str).replace(/\{\{\s*(node_[A-Za-z0-9_]+)(?:\.(output|label))?\s*\}\}/g, (m, id, prop) => {
+    const v = ctx && ctx[id];
+    if (v === undefined) return m;
+    if (prop === 'label') return v.label || '';
+    return v.output || v.value || '';
+  });
+}
+
+// 3. 재시도/폴백 — runNodeAction에 retry/fallback 반영
+async function runNodeWithRetry(node) {
+  const retries = node.retry || 0;
+  for (let i = 0; i <= retries; i++) {
+    const result = await runNodeAction(node);
+    if (result.ok !== false) return result;
+    if (i < retries) { setExecStatus(node.id, 'running'); toast('🔄 재시도 ' + (i + 1) + '/' + retries); }
+  }
+  // 폴백: fallback_to 지정 시 대체 노드
+  const wf = currentWorkflow();
+  if (node.fallback_to && wf) {
+    const fb = wf.nodes.find(n => n.id === node.fallback_to);
+    if (fb) { toast('↩️ 폴백: ' + (fb.label || fb.id)); return await runNodeAction(fb); }
+  }
+  return { ok: false };
+}
+
+// 4. 실행 트레이스
+let traceEntries = [];
+function traceAdd(nodeId, label, status, ms) {
+  traceEntries.unshift({ nodeId, label, status, ms });
+  if (traceEntries.length > 50) traceEntries.pop();
+  renderTrace();
+}
+function renderTrace() {
+  const body = document.getElementById('trace-body');
+  if (!body) return;
+  body.innerHTML = traceEntries.length === 0
+    ? '<span style="color:var(--panel-text-faint)">실행 이력 없음</span>'
+    : traceEntries.map(t =>
+      '<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--dark-border)">' +
+      '<span style="color:' + (t.status === 'completed' ? 'var(--accent)' : t.status === 'failed' ? '#ff5d5d' : '#d29922') + '">' +
+      (t.status === 'completed' ? '✓' : t.status === 'failed' ? '✗' : '⏳') + '</span>' +
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(t.label) + '</span>' +
+      '<span style="color:var(--panel-text-faint)">' + t.ms + 'ms</span></div>'
+    ).join('');
+}
+
+// 5. 웹훅 트리거
+async function registerWebhook(nodeId) {
+  const wf = currentWorkflow();
+  if (!wf || !serverOnline) { toast('서버 미연결'); return; }
+  try {
+    const r = await fetch(API_BASE + '/api/webhook/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_id: wf.id, node_id: nodeId || '' }),
+    });
+    const j = await r.json();
+    if (j.success) {
+      toastHTML('<span>웹훅 등록됨<br><small style="color:var(--panel-text-dim)">' + escapeHtml(API_BASE + j.webhook_url) + '</small></span>', 5000);
+    }
+  } catch (e) { toast('웹훅 실패'); }
+}
+
+// 승인 게이트 — 실행 중 사용자 확인 대기
+function waitApproval(text) {
+  return new Promise((resolve) => {
+    document.getElementById('approval-overlay').style.display = 'flex';
+    document.getElementById('approval-overlay').style.alignItems = 'center';
+    document.getElementById('approval-text').textContent = text;
+    window.__approveResolve = resolve;
+  });
+}
+document.getElementById('approval-yes').addEventListener('click', () => {
+  document.getElementById('approval-overlay').style.display = 'none';
+  if (window.__approveResolve) window.__approveResolve(true);
+});
+document.getElementById('approval-no').addEventListener('click', () => {
+  document.getElementById('approval-overlay').style.display = 'none';
+  if (window.__approveResolve) window.__approveResolve(false);
+});
+
+// 트레이스 패널
+document.getElementById('btn-trace').addEventListener('click', () => {
+  document.getElementById('trace-panel').style.display = 'block';
+  renderTrace();
+});
+document.getElementById('trace-close').addEventListener('click', () => {
+  document.getElementById('trace-panel').style.display = 'none';
+});
 
 // === 초기화 ===
 loadStore();

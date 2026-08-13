@@ -256,6 +256,57 @@ app.get('/api/workflows/:id/logs', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
+// === LLM 판단 API (decision 노드: llm_prompt) ===
+app.post('/api/ai/decide', async (req, res) => {
+  try {
+    const { prompt, context } = req.body || {};
+    if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
+    const auth = getNousAuth();
+    if (!auth) return res.status(503).json({ success: false, error: 'Nous 인증 없음' });
+    const sys = `You are a workflow decision maker. Given a question and context, answer with ONLY "YES" or "NO".
+Question: ${prompt}
+Context: ${JSON.stringify(context || {})}`;
+    const r = await fetch(auth.base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + auth.token },
+      body: JSON.stringify({
+        model: 'deepseek/deepseek-v4-flash-0731',
+        messages: [{ role: 'system', content: sys }],
+        temperature: 0.1, max_tokens: 10,
+      }),
+    });
+    if (!r.ok) return res.status(502).json({ success: false, error: 'LLM 오류 ' + r.status });
+    const data = await r.json();
+    const answer = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
+    const yes = answer.includes('YES');
+    res.json({ success: true, decision: yes, raw: answer });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// === 웹훅 트리거 — 외부 이벤트로 워크플로우 실행 ===
+const webhookTokens = new Map(); // token -> { wfId, nodeId }
+app.post('/api/webhook/register', requireAuth, async (req, res) => {
+  try {
+    const { wf_id, node_id } = req.body || {};
+    if (!wf_id) return res.status(400).json({ success: false, error: 'wf_id required' });
+    const token = 'wh_' + Math.random().toString(36).slice(2, 12);
+    webhookTokens.set(token, { wfId: wf_id, nodeId: node_id || '' });
+    res.json({ success: true, webhook_url: '/api/webhook/' + token, token });
+  } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+app.post('/api/webhook/:token', async (req, res) => {
+  const reg = webhookTokens.get(req.params.token);
+  if (!reg) return res.status(404).json({ success: false, error: 'invalid token' });
+  // 실행 로그에 웹훅 호출 기록
+  try {
+    await pool.query(
+      `INSERT INTO wf_runlogs (wf_id, run_path, run_at) VALUES ($1, $2, now())`,
+      [reg.wfId, 'WEBHOOK → ' + (reg.nodeId || 'start')]
+    );
+  } catch (e) {}
+  res.json({ success: true, triggered: reg });
+});
+
 // === 실행 스크립트 API (노드 액션: script) ===
 app.post('/api/exec', async (req, res) => {
   try {

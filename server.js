@@ -581,11 +581,29 @@ app.put('/api/sessions/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 시크릿 볼트 — 자격증명 암호화 (AES-256-CTR) ===
+const crypto2 = require('crypto');
+const VAULT_KEY = process.env.WF_VAULT_KEY || 'wf-vault-local-key-2026';
+function encryptSecret(plain) {
+  const iv = crypto2.randomBytes(16);
+  const cipher = crypto2.createCipheriv('aes-256-ctr', crypto2.createHash('sha256').update(VAULT_KEY).digest(), iv);
+  const enc = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  return iv.toString('hex') + ':' + enc.toString('hex');
+}
+function decryptSecret(data) {
+  try {
+    const [ivHex, encHex] = String(data).split(':');
+    const decipher = crypto2.createDecipheriv('aes-256-ctr', crypto2.createHash('sha256').update(VAULT_KEY).digest(), Buffer.from(ivHex, 'hex'));
+    return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
+  } catch (e) { return data; }
+}
+
 // === 1. 에이전트 자격증명/권한 API ===
 app.get('/api/credentials', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT agent_id, api_key, scopes FROM agent_credentials');
-    res.json({ success: true, credentials: rows });
+    const { rows } = await pool.query('SELECT agent_id, api_key, scopes, encrypted FROM agent_credentials');
+    const creds = rows.map(r => ({ ...r, api_key: r.encrypted ? decryptSecret(r.api_key) : r.api_key }));
+    res.json({ success: true, credentials: creds });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 app.post('/api/credentials', requireAuth, async (req, res) => {
@@ -594,9 +612,9 @@ app.post('/api/credentials', requireAuth, async (req, res) => {
     if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
     const key = 'ag_' + require('crypto').randomBytes(12).toString('hex');
     await pool.query(
-      `INSERT INTO agent_credentials (agent_id, api_key, scopes) VALUES ($1,$2,$3)
-       ON CONFLICT (agent_id) DO UPDATE SET api_key=EXCLUDED.api_key, scopes=EXCLUDED.scopes`,
-      [agent_id, key, JSON.stringify(scopes || ['execute', 'report'])]
+      `INSERT INTO agent_credentials (agent_id, api_key, scopes, encrypted) VALUES ($1,$2,$3,true)
+       ON CONFLICT (agent_id) DO UPDATE SET api_key=EXCLUDED.api_key, scopes=EXCLUDED.scopes, encrypted=true`,
+      [agent_id, encryptSecret(key), JSON.stringify(scopes || ['execute', 'report'])]
     );
     res.json({ success: true, api_key: key });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }

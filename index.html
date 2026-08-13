@@ -695,6 +695,12 @@
       <h4 style="color:var(--accent);font-size:14px">실행 트레이스</h4>
       <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
     </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <select id="trace-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
+        <option value="">전체</option><option value="fail">실패만</option><option value="slow">느린 스팬</option>
+      </select>
+      <button id="trace-refresh" class="tb-action" style="padding:3px 8px;font-size:11px">⟳</button>
+    </div>
     <div id="trace-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
   </div>
   <!-- 에이전트 레지스트리 패널 -->
@@ -3022,10 +3028,82 @@ document.getElementById('approval-no').addEventListener('click', () => {
 });
 
 // 트레이스 패널
+// 트레이스 타임라인 — agent_spans를 타임라인으로
+async function renderTraceTimeline() {
+  const body = document.getElementById('trace-body');
+  const filter = document.getElementById('trace-filter') ? document.getElementById('trace-filter').value : '';
+  try {
+    const r = await fetch(API_BASE + '/api/spans');
+    const j = await r.json();
+    const spans = j.success ? (j.spans || []) : [];
+    const filtered = filter === 'fail' ? spans.filter(s => !(s.result && s.result.ok)) :
+      filter === 'slow' ? spans.filter(s => s.duration_ms > 500) : spans;
+    body.innerHTML = filtered.length === 0
+      ? '<span style="color:var(--panel-text-faint)">스팬 없음</span>'
+      : filtered.slice(0, 40).map(s => {
+          const ok = s.result && s.result.ok;
+          const color = ok ? 'var(--accent)' : '#ff5d5d';
+          const slow = s.duration_ms > 500 ? ' ⚠' : '';
+          return '<div style="padding:7px;margin-bottom:5px;background:var(--dark-3);border-radius:8px;font-size:11px;border-left:3px solid ' + color + '">' +
+            '<div style="display:flex;justify-content:space-between"><strong>' + escapeHtml(s.operation || s.node_id) + '</strong>' +
+            '<span style="color:var(--panel-text-faint)">' + s.duration_ms + 'ms' + slow + '</span></div>' +
+            '<div style="color:var(--panel-text-dim);font-size:10px">' + escapeHtml(s.agent_id) + ' · ' + escapeHtml(s.trace_id || '') + '</div>' +
+            (s.result && s.result.output ? '<div style="color:var(--panel-text-faint);font-size:10px;margin-top:2px">' + escapeHtml(String(s.result.output).slice(0, 80)) + '</div>' : '') +
+            '</div>';
+        }).join('');
+  } catch (e) { body.innerHTML = '<span style="color:var(--panel-text-faint)">트레이스 로드 실패</span>'; }
+}
+
+// 실행 퍼널/병목 차트
+function renderFunnelChart() {
+  const wf = currentWorkflow();
+  const nodes = (wf && wf.nodes) || [];
+  const body = document.getElementById('stats-body');
+  if (!body || nodes.length === 0) return;
+  const done = nodes.filter(n => n.status === '완료' || n.status === 'done').length;
+  const running = nodes.filter(n => n.status === '진행' || n.status === 'running').length;
+  const blocked = nodes.filter(n => n.blocked).length;
+  const pending = nodes.length - done - running;
+  const segments = [
+    { label: '완료', val: done, color: '#00ff87' },
+    { label: '진행', val: running, color: '#d29922' },
+    { label: '차단', val: blocked, color: '#ff5d5d' },
+    { label: '대기', val: Math.max(0, pending), color: '#8fa3b5' },
+  ];
+  const max = Math.max(1, ...segments.map(s => s.val));
+  const bars = segments.map(s => {
+    const w = Math.round(s.val / max * 100);
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+      '<span style="width:50px;font-size:10px;color:var(--panel-text-dim)">' + s.label + '</span>' +
+      '<div style="flex:1;height:14px;background:var(--dark-3);border-radius:4px;overflow:hidden">' +
+      '<div style="width:' + w + '%;height:100%;background:' + s.color + ';border-radius:4px"></div></div>' +
+      '<span style="width:30px;font-size:10px;text-align:right">' + s.val + '</span></div>';
+  }).join('');
+  body.innerHTML += '<div style="margin-top:14px"><strong style="font-size:12px">실행 퍼널</strong>' + bars + '</div>';
+}
+async function renderCostLatency() {
+  const body = document.getElementById('stats-body');
+  if (!body) return;
+  try {
+    const r = await fetch(API_BASE + '/api/spans');
+    const j = await r.json();
+    const spans = j.success ? (j.spans || []) : [];
+    if (spans.length === 0) return;
+    const totalMs = spans.reduce((a, s) => a + (s.duration_ms || 0), 0);
+    const avgMs = Math.round(totalMs / spans.length);
+    const failCount = spans.filter(s => !(s.result && s.result.ok)).length;
+    body.innerHTML += '<div style="margin-top:14px;font-size:11px;color:var(--panel-text-dim)">' +
+      '<strong style="color:var(--panel-text)">비용/지연</strong><br>' +
+      '평균 지연: ' + avgMs + 'ms · 총 ' + spans.length + ' 실행 · 실패 ' + failCount + '건</div>';
+  } catch (e) {}
+}
+
 document.getElementById('btn-trace').addEventListener('click', () => {
   document.getElementById('trace-panel').style.display = 'block';
-  renderTrace();
+  renderTraceTimeline();
 });
+document.getElementById('trace-refresh').addEventListener('click', renderTraceTimeline);
+document.getElementById('trace-filter').addEventListener('change', renderTraceTimeline);
 document.getElementById('trace-close').addEventListener('click', () => {
   document.getElementById('trace-panel').style.display = 'none';
 });

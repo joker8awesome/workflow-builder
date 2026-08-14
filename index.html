@@ -191,6 +191,7 @@
   #canvas .node.type-approval{--node-accent:#b45f06}
   #canvas .node.type-supervisor{--node-accent:#8957e5}
   #canvas .node.type-reviewer{--node-accent:#0d9488}
+  #canvas .node.type-connector{--node-accent:#f78166}
   #canvas .node.type-end{--node-accent:#d1242f}
   #canvas .node:hover{border-color:color-mix(in srgb, var(--accent) 60%, var(--node-border))}
   #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow);transform:translateY(-2px)}
@@ -1122,6 +1123,7 @@ const NODE_TYPES = {
   approval:   { color: '#b45f06', icon: '⏸', label: '승인', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><rect x="2" y="2" width="3.5" height="10" rx="1"/><rect x="8.5" y="2" width="3.5" height="10" rx="1"/></svg>' },
   supervisor: { color: '#8957e5', icon: '§', label: '감독', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 3v6l-6 3-6-3V4z"/><circle cx="7" cy="7" r="2"/></svg>' },
   reviewer:   { color: '#0d9488', icon: '✓', label: '검토', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M1 7l4 4 8-9"/><path d="M1 7l4 4 8-9" stroke="#0d9488" stroke-width="2" fill="none"/></svg>' },
+  connector:  { color: '#f78166', icon: '⇄', label: '연결', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M2 4l5-2 5 2-5 2z"/><path d="M2 7l5-2 5 2-5 2z"/><path d="M2 10l5-2 5 2-5 2z"/></svg>' },
   end:        { color: '#d1242f', icon: '●', label: '종료', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><circle cx="7" cy="7" r="5"/></svg>' }
 };
 let selected = { type: null, id: null };
@@ -1370,6 +1372,17 @@ function renderInspector() {
       <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
+      ${n.type === 'connector' ? `
+      <label>커넥터 타입</label>
+      <select id="f-conn-type" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">
+        <option value="csv"${n.connector_type === 'csv' ? ' selected' : ''}>CSV</option>
+        <option value="json"${n.connector_type === 'json' ? ' selected' : ''}>JSON</option>
+        <option value="api"${n.connector_type === 'api' ? ' selected' : ''}>API URL</option>
+        <option value="db"${n.connector_type === 'db' ? ' selected' : ''}>DB 쿼리</option>
+      </select>
+      <label>설정 (CSV/JSON 텍스트, API URL, 또는 SQL)</label>
+      <textarea id="f-conn-config" rows="3" placeholder="데이터 또는 URL 또는 SELECT ..." style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px">${escapeHtml((n.connector_config && (n.connector_config.text || n.connector_config.url || n.connector_config.query)) || '')}</textarea>
+      ` : ''}
       <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
       ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea><label>모델 라우팅</label><select id="f-model" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px"><option value="">자동</option><option value="cheap"' + (n.model === 'cheap' ? ' selected' : '') + '>저비용</option><option value="smart"' + (n.model === 'smart' ? ' selected' : '') + '>고성능</option></select>' +
         '<label>자율성 스펙트럼</label><select id="f-auto" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">' +
@@ -1424,6 +1437,17 @@ function renderInspector() {
     const fCond2 = document.getElementById('f-cond2');
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
+    const fConnType = document.getElementById('f-conn-type');
+    if (fConnType) {
+      fConnType.addEventListener('change', (e) => { n.connector_type = e.target.value; saveStore(); });
+      const fConnCfg = document.getElementById('f-conn-config');
+      if (fConnCfg) fConnCfg.addEventListener('change', (e) => {
+        const v = e.target.value;
+        if (n.connector_type === 'api') n.connector_config = { url: v };
+        else n.connector_config = { ...(n.connector_config || {}), text: v };
+        saveStore();
+      });
+    }
     const fMax = document.getElementById('f-maxtok');
     if (fMax) fMax.addEventListener('change', (e) => { n.max_tokens = e.target.value ? +e.target.value : undefined; saveStore(); });
     document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });
@@ -2487,6 +2511,9 @@ async function executeWorkflow() {
   const elapsed = ((Date.now() - execState.startTime) / 1000).toFixed(1);
   execState.running = false;
   document.getElementById('rs-status').textContent = '✅ 완료 (' + elapsed + 's)';
+  // 결과 피드백 루프 — 지식 저장
+  const fbSummary = (runLogs && runLogs.slice(-3).join(' | ')) || '완료';
+  feedbackLoop(wf, fbSummary, '완료');
   setTimeout(() => document.getElementById('run-status-bar').style.display = 'none', 3000);
   const summary = path.map(n => n.label).join(' → ');
   toast('실행 완료: ' + summary);
@@ -4241,6 +4268,50 @@ document.addEventListener('click', (e) => {
   const wrap = document.getElementById('more-wrap');
   if (menu && wrap && !wrap.contains(e.target)) menu.style.display = 'none';
 });
+
+// 1. 데이터 커넥터 노드 실행 — CSV/JSON/API/DB
+async function runConnector(n) {
+  const type = n.connector_type || 'csv';
+  const config = n.connector_config || {};
+  const r = await fetch(API_BASE + '/api/connector', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type, config }),
+  }).catch(() => null);
+  if (r && r.ok) {
+    const j = await r.json();
+    if (j.success) {
+      logRun('연결: ' + (n.label || type) + ' → ' + (j.meta.count !== undefined ? j.meta.count + '건' : '완료'));
+      return j.data;
+    }
+    logRun('연결 오류: ' + j.error);
+  } else {
+    logRun('연결 실패 (서버 미연결)');
+  }
+  return null;
+}
+
+// 2. 다중 모델 라우팅 — 노드 model 속성 + 서버 테이블
+async function resolveModel(n) {
+  if (n.model && n.model !== 'auto') return n.model;
+  try {
+    const r = await fetch(API_BASE + '/api/model-routes');
+    const j = await r.json();
+    const complexity = (n.llm_prompt || '').length > 80 ? 'smart' : 'cheap';
+    const route = j.routes && j.routes[complexity];
+    return route ? route.model : 'deepseek/deepseek-v4-flash-0731';
+  } catch (e) { return 'deepseek/deepseek-v4-flash-0731'; }
+}
+
+// 3. 결과 피드백 루프 — 실행 결과를 지식으로 저장
+async function feedbackLoop(wf, summary, status) {
+  if (!serverOnline || !wf) return;
+  try {
+    await fetch(API_BASE + '/api/feedback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_id: wf.id, summary: String(summary).slice(0, 200), status }),
+    });
+  } catch (e) {}
+}
 
 // === 초기화 ===
 loadStore();

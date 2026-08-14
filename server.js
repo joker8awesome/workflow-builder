@@ -887,6 +887,69 @@ app.post('/api/workflows/:id/run', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 데이터 커넥터 API — CSV/JSON/API/DB 입력 ===
+app.post('/api/connector', async (req, res) => {
+  try {
+    const { type, config } = req.body || {};
+    const out = { success: true, data: null, meta: {} };
+    if (type === 'csv') {
+      // CSV 텍스트 → JSON 배열
+      const csv = String(config && config.text || '');
+      if (!csv.trim()) return res.json({ success: false, error: 'CSV 없음' });
+      const lines = csv.split(/\r?\n/).filter(l => l.trim());
+      const headers = lines[0].split(',').map(h => h.trim());
+      out.data = lines.slice(1).map(l => {
+        const cells = l.split(',').map(c => c.trim());
+        const row = {};
+        headers.forEach((h, i) => row[h] = cells[i] || '');
+        return row;
+      });
+      out.meta.count = out.data.length;
+    } else if (type === 'json') {
+      const txt = String(config && config.text || '');
+      try { out.data = JSON.parse(txt); } catch (e) { return res.json({ success: false, error: 'JSON 파싱 실패' }); }
+      out.meta.count = Array.isArray(out.data) ? out.data.length : 1;
+    } else if (type === 'api') {
+      const url = String(config && config.url || '');
+      if (!url) return res.json({ success: false, error: 'URL 없음' });
+      const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      const j = await r.json();
+      out.data = j;
+      out.meta.status = r.status;
+    } else if (type === 'db') {
+      const q = String(config && config.query || '');
+      if (!q) return res.json({ success: false, error: '쿼리 없음' });
+      const { rows } = await pool.query(q);
+      out.data = rows;
+      out.meta.count = rows.length;
+    } else {
+      return res.json({ success: false, error: '지원 타입: csv/json/api/db' });
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 다중 모델 라우팅 — 모델별 가격/품질 테이블 ===
+const MODEL_ROUTES = {
+  'auto':    { desc: '자동', providers: ['nous'] },
+  'cheap':   { desc: '저비용', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 50 },
+  'smart':   { desc: '고성능', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 200 },
+};
+app.get('/api/model-routes', (req, res) => res.json({ success: true, routes: MODEL_ROUTES }));
+
+// === 결과 피드백 루프 — 실행 결과를 지식으로 저장 ===
+app.post('/api/feedback', async (req, res) => {
+  try {
+    const { wf_id, node_id, summary, status } = req.body || {};
+    if (!wf_id || !summary) return res.json({ success: false, error: 'wf_id/summary 필요' });
+    await pool.query(
+      `INSERT INTO wf_knowledge (wf_id, note, tags) VALUES ($1,$2,'["feedback"]')`,
+      [wf_id, '[실행' + (status || '') + '] ' + String(summary).slice(0, 500)]
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

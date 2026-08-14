@@ -1461,6 +1461,7 @@ function renderInspector() {
       <label>이름</label><input id="f-label" value="${escapeHtml(n.label)}">
       <label>설명</label><textarea id="f-desc">${escapeHtml(n.desc)}</textarea>
       <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
+      ${n.agentId ? `<button id="cred-issue" class="tb-action" style="width:100%;margin-top:6px">🔑 자격증명 발급 (한 번만 표시)</button>` : ''}
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
       ${n.type === 'connector' ? `
@@ -1539,6 +1540,28 @@ function renderInspector() {
         saveStore();
       });
     }
+    // 자격증명 발급 버튼 — 한 번만 표시되는 토큰
+    const credBtn = document.getElementById('cred-issue');
+    if (credBtn) credBtn.addEventListener('click', async () => {
+      if (!selected || selected.type !== 'node') return;
+      const wf = currentWorkflow();
+      const n = wf.nodes.find(x => x.id === selected.id);
+      const agentId = n && n.agentId;
+      if (!agentId) { toast('먼저 담당 에이전트를 선택하세요'); return; }
+      const r = await fetch(API_BASE + '/api/credentials', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: agentId })
+      }).catch(() => null);
+      const j = r && r.ok ? await r.json() : null;
+      if (j && j.success) {
+        // 한 번만 표시 — localStorage에 발급 완료 기록
+        const shown = JSON.parse(localStorage.getItem(LS_KEY + '_cred_shown') || '[]');
+        if (shown.includes(agentId)) { toast('이미 발급된 키는 다시 볼 수 없습니다'); return; }
+        shown.push(agentId);
+        localStorage.setItem(LS_KEY + '_cred_shown', JSON.stringify(shown));
+        toast('🔑 키 발급됨 (한 번만 표시): ' + j.api_key, 8000);
+      } else toast(j ? j.error : '발급 실패 (서버 필요)');
+    });
     const fMax = document.getElementById('f-maxtok');
     if (fMax) fMax.addEventListener('change', (e) => { n.max_tokens = e.target.value ? +e.target.value : undefined; saveStore(); });
     document.getElementById('f-fallback').addEventListener('input', (e) => { n.fallback_to = e.target.value; saveStore(); });

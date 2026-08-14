@@ -222,7 +222,7 @@ app.use(express.static(__dirname));
 const server = http.createServer(app);
 
 // === 실시간 협업 (WebSocket) ===
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ noServer: true });
 const wsClients = new Set();
 wss.on('connection', (ws) => {
   wsClients.add(ws);
@@ -237,6 +237,105 @@ wss.on('connection', (ws) => {
 function broadcastWf(id, data) {
   const msg = JSON.stringify({ type: 'wf_update', id, data });
   wsClients.forEach(c => { if (c.readyState === 1) c.send(msg); });
+}
+
+// === 에이전트 보고 API — trace_id로 상태 갱신 + 결과 저장 ===
+app.post('/api/agent/report', async (req, res) => {
+  try {
+    const { trace_id, status, summary, result_ref, agent_id } = req.body || {};
+    if (!trace_id) return res.status(400).json({ success: false, error: 'trace_id required' });
+    // 해당 trace의 명령을 completed/failed로 갱신
+    await pool.query(
+      `UPDATE agent_messages SET status = $1, read_at = now() WHERE trace_id = $2`,
+      [status || 'completed', trace_id]
+    );
+    // 결과 저장 — 외래키 실패 시 무시 (상태 갱신은 이미 완료)
+    if (result_ref || summary) {
+      try {
+        await pool.query(
+          `INSERT INTO wf_results (wf_id, node_id, result) VALUES ($1,$2,$3)`,
+          [trace_id.slice(0, 8), result_ref || 'report_' + trace_id.slice(0, 6),
+           JSON.stringify({ agent: agent_id || '', summary: summary || '', status: status || 'completed' })]
+        );
+      } catch (fkErr) { /* wf_id 외래키 미존재 — 무시 */ }
+    }
+    // 웹 UI에 이벤트 브로드캐스트 — 실시간 반영
+    broadcastWf(trace_id, { agent_report: true, status: status || 'completed', summary: summary || '' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 에이전트 명령 전송 API — DB 기록 + WS push ===
+app.post('/api/agent/command', async (req, res) => {
+  try {
+    const { to_agent, msg_type, payload_ref, trace_id, payload, from_agent } = req.body || {};
+    if (!to_agent) return res.status(400).json({ success: false, error: 'to_agent required' });
+    const sid = 'sess_' + Date.now().toString(36);
+    await pool.query(
+      `INSERT INTO agent_messages (msg_type, from_agent, to_agent, session_id, payload, status, trace_id, payload_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [msg_type || 'command', from_agent || 'web', to_agent, sid,
+       JSON.stringify(payload || {}), 'pending', trace_id || '', payload_ref || '']
+    );
+    // WS push — 연결된 에이전트에게 즉시 전달 (미연결이면 DB에만 → MCP로 픽업)
+    const pushed = await sendAgentCommand(to_agent, {
+      type: msg_type || 'command', from_agent: from_agent || 'web', to_agent,
+      payload_ref: payload_ref || '', trace_id: trace_id || '', payload: payload || {}
+    });
+    res.json({ success: true, pushed, session_id: sid });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 에이전트 WS 브릿지 — /ws/agent/:agent_id (외부 AI 세션 채널) ===
+const agentSockets = new Map();  // agent_id → WebSocket
+const agentWss = new WebSocketServer({ noServer: true });
+// upgrade 통합 핸들러 — 웹 WS(/ws)와 에이전트 WS(/ws/agent) 경로 분기
+server.on('upgrade', (req, socket, head) => {
+  const pathname = (req.url || '').split('?')[0];
+  if (pathname === '/ws/agent') {
+    agentWss.handleUpgrade(req, socket, head, (ws) => agentWss.emit('connection', ws, req));
+  } else if (pathname === '/ws') {
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
+  } else {
+    socket.destroy();
+  }
+});
+agentWss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://localhost');
+  const agentId = url.searchParams.get('agent_id') || '';
+  const key = url.searchParams.get('key') || '';
+  if (!agentId || !key) { ws.close(4001, 'agent_id/key required'); return; }
+  // 자격증명 검증
+  pool.query('SELECT api_key, encrypted FROM agent_credentials WHERE agent_id = $1', [agentId])
+    .then(r => {
+      if (!r.rows.length) { ws.close(4003, 'unknown agent'); return; }
+      const stored = r.rows[0].encrypted ? decryptSecret(r.rows[0].api_key) : r.rows[0].api_key;
+      if (stored !== key) { ws.close(4003, 'invalid credential'); return; }
+      agentSockets.set(agentId, ws);
+      ws.send(JSON.stringify({ type: 'connected', agent_id: agentId, ts: new Date().toISOString() }));
+      console.log('[agent-ws] 연결됨:', agentId);
+    })
+    .catch(e => { ws.close(4002, 'db error'); });
+  ws.on('message', (raw) => {
+    // 에이전트가 보낸 보고 → audit 로그
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'report') {
+        pool.query("UPDATE agent_messages SET task_status = 'completed', updated_at = now() WHERE trace_id = $1", [msg.trace_id || '']).catch(() => {});
+      }
+    } catch (e) {}
+  });
+  ws.on('close', () => { agentSockets.delete(agentId); console.log('[agent-ws] 해제:', agentId); });
+});
+
+// 에이전트에게 명령 전송 — orchestrator/웹 UI에서 호출
+async function sendAgentCommand(toAgent, message) {
+  const ws = agentSockets.get(toAgent);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(message));
+    return true;
+  }
+  return false;  // 미연결 — DB에만 저장 (MCP로 나중에 픽업)
 }
 
 // === 서버 버전 히스토리 ===

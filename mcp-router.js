@@ -105,10 +105,28 @@ async function callTool(name, args, ctx) {
     }
     case 'agent.report': {
       const { trace_id, task_status, result, error, duration_ms } = args || {};
+      // 4.2 멱등성 — 이미 완료된 trace_id면 중복 처리 방지
+      try {
+        const chk = await pool.query(
+          `SELECT COUNT(*) FROM agent_checkpoints WHERE data->>'trace_id' = $1 AND status IN ('done','failed')`, [trace_id]);
+        if (parseInt(chk.rows[0].count) > 0) {
+          return { content: [{ type: 'text', text: JSON.stringify({ idempotent: true, trace_id, result_payload_ref: 'result_' + trace_id.slice(-6) }) }] };
+        }
+      } catch (e) {}
       await pool.query(`UPDATE agent_messages SET status = $1, read_at = now() WHERE trace_id = $2`, [task_status === 'completed' ? 'completed' : 'failed', trace_id]);
       const rref = 'result_' + Date.now().toString(36);
       try {
         await pool.query('INSERT INTO wf_results (wf_id, node_id, result) VALUES ($1,$2,$3)', [trace_id.slice(0, 8), rref, JSON.stringify({ agent: agent_id, result: result || null, error: error || null, status: task_status })]);
+      } catch (e) {}
+      // 체크포인트 기록 — 멱등성 기반 (done/failed)
+      try {
+        await pool.query(
+          `INSERT INTO agent_checkpoints (session_id, wf_id, node_id, status, data)
+           VALUES ($1,$2,$3,$4,$5)`,
+          ['sess_' + Date.now().toString(36), trace_id.slice(0, 8), rref,
+           task_status === 'completed' ? 'done' : 'failed',
+           JSON.stringify({ agent_id, trace_id, status: task_status, error: error || null })]
+        );
       } catch (e) {}
       try { const srv = require('./server'); if (srv && srv.broadcastWf) srv.broadcastWf(trace_id, { agent_report: true, status: task_status, agent_id }); } catch (e) {}
       return { content: [{ type: 'text', text: JSON.stringify({ report_message_id: 'msg_' + Date.now().toString(36), result_payload_ref: rref, checkpoint_id: 'chk_' + Date.now().toString(36), span_id: 'span_' + Date.now().toString(36) }) }] };
@@ -165,7 +183,15 @@ router.post('/mcp', authenticate, async (req, res) => {
   if (!body || body.jsonrpc !== '2.0') {
     return res.status(400).json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request' }, id: null });
   }
-  const method = body.method;
+  const strictHeaders = process.env.WF_MCP_STRICT_HEADERS === '1';
+  const headerMethod = req.headers['mcp-method'];
+  if (strictHeaders && !headerMethod) {
+    return res.json(rpcError(body.id ?? null, -32600, 'Mcp-Method header required (strict mode)'));
+  }
+  const method = headerMethod || body.method;
+  if (headerMethod && body.method && headerMethod !== body.method) {
+    return res.json(rpcError(body.id ?? null, -32600, 'header/body method mismatch'));
+  }
   if (method === 'initialize') {
     return res.json({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: body.params?.protocolVersion || '2026-07-28', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'workflow-builder', version: '1.0.0' } } });
   }
@@ -174,7 +200,10 @@ router.post('/mcp', authenticate, async (req, res) => {
   }
   if (method === 'tools/call') {
     try {
-      const name = body.params?.name;
+      let name = body.params?.name || '';
+      // 4.3 underscore 정규화 — 첫 단어 뒤의 밑줄만 점으로 (agent_whoami → agent.whoami)
+      // list_pending 같은 이름 내부 밑줄은 보존
+      name = name.replace(/^([a-z]+)_/, '$1.');
       const args = body.params?.arguments || {};
       const scope = SCOPE_FOR_TOOL[name];
       if (scope && !(req.scopes || []).includes(scope)) {

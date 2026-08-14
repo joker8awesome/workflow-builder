@@ -57,11 +57,16 @@ app.use(express.json({ limit: '10mb' }));
 app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallbackLog }));
 
 // PostgreSQL — 로컬 소켓 trust
-const pool = new Pool({
-  host: '/opt/data/pgdata',
-  database: 'odds',
-  user: 'hermes',
-});
+const pool = new Pool(process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL }
+  : { host: process.env.PGHOST || '/opt/data/pgdata',
+      database: process.env.PGDATABASE || 'odds',
+      user: process.env.PGUSER || 'hermes',
+      password: process.env.PGPASSWORD,
+      port: process.env.PGPORT });
+if (!process.env.DATABASE_URL && !process.env.PGHOST) {
+  console.log('[db] 기본 소켓 경로 사용: /opt/data/pgdata');
+}
 // 자격증명 API 마운트 (Claude 세션 구현 — prefix/GET/DELETE/감사)
 try {
   const createCredentialsRouter = require('./credentials-api');

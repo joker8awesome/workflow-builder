@@ -139,7 +139,7 @@ async function callTool(name, args, ctx) {
     }
     case 'workflow.list': {
       const { rows } = await pool.query('SELECT id, name, data, updated_at FROM wf_workflows ORDER BY updated_at DESC');
-      const wfs = rows.map(r => { let d = {}; try { d = JSON.parse(r.data); } catch (e) {} return { id: r.id, name: r.name, node_count: (d.nodes || []).length, updated_at: r.updated_at }; });
+      const wfs = rows.map(r => { let d = {}; try { d = (typeof r.data === 'string') ? (JSON.parse(r.data) || {}) : (r.data || {}); } catch (e) { console.warn('[mcp] workflow.data 파싱 실패:', r.id, e.message); } return { id: r.id, name: r.name, node_count: (d.nodes || []).length, updated_at: r.updated_at }; });
       return { content: [{ type: 'text', text: JSON.stringify({ workflows: wfs }) }] };
     }
     case 'workflow.execute': {
@@ -244,7 +244,7 @@ router.get('/.well-known/mcp-server-card', (req, res) => {
   res.json({
     name: 'Workflow Builder', version: '1.0.0',
     protocol_versions: ['2026-07-28'],
-    endpoints: { mcp: `${req.protocol}://${req.get('host')}/mcp` },
+    endpoints: { mcp: `https://${req.get('host')}/mcp` },
     capabilities: { tools: true, resources: true, prompts: false, sampling: false },
     extensions: ['io.modelcontextprotocol/tasks'],
     auth: { type: 'bearer', instructions: '웹 UI: 팀 → 에이전트 → 자격증명 발급' },

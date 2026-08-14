@@ -218,12 +218,13 @@
     width:18px;height:18px;border-radius:50%;
     background:var(--accent);
     border:3px solid var(--node-bg);
-    cursor:crosshair;opacity:0;transition:opacity .15s, scale .15s;
+    cursor:crosshair;opacity:.7;transition:opacity .15s, scale .15s;
     z-index:5;pointer-events:auto;
     box-shadow:0 0 10px var(--accent-glow);
   }
   #canvas .node .nport:hover{scale:1.3;background:var(--accent-strong)}
   #canvas .node:hover .nport{opacity:1}
+  #canvas .node:has(.nport):not(:hover) .nport{opacity:.45}
   #canvas .node .nport:hover{scale:1.3}
 
   /* 엣지 — 다크 캔버스에서 가시성 개선 */
@@ -1237,7 +1238,10 @@ function renderCanvas() {
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selected = { type: 'node', id: n.id }; renderAll(); }
     });
-    el.addEventListener('mousedown', (e) => startDrag(e, n));
+    el.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.nport')) return;  // 포트 드래그는 연결용 — 노드 이동 금지
+      startDrag(e, n);
+    });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       if (e.shiftKey) { toggleMulti(n.id); }

@@ -591,6 +591,11 @@
   #canvas .node.drop-bounce{animation:dropBounce .3s ease}
   @keyframes dropBounce{0%{transform:translateY(-4px) scale(1.03)}60%{transform:translateY(1px)}100%{transform:translateY(0)}}
 
+  /* 엣지 연결 상태 */
+  #edges path.edge-flash, #edges line.edge-flash{stroke:var(--accent) !important;stroke-width:5px !important;filter:drop-shadow(0 0 6px var(--accent-glow));transition:stroke .3s}
+  #canvas .node .edge-ok{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--accent);background:rgba(0,255,135,.12);border:1px solid rgba(0,255,135,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
+  #canvas .node .edge-warn{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--yellow);background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
+
   /* 신뢰도 배지 */
   .conf-badge{
     position:absolute;top:-9px;right:10px;
@@ -799,6 +804,14 @@
       <button id="gov-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
     </div>
     <div id="gov-body" style="font-size:12px;color:var(--panel-text)"></div>
+  </div>
+  <!-- 연결 기록 패널 -->
+  <div id="edge-log-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:77;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:320px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="color:var(--accent);font-size:14px">🔗 연결 기록</h4>
+      <button id="edgelog-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div id="edge-log-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -1216,6 +1229,7 @@ function renderCanvas() {
       ${pipelineStatusBadge(n)}
       ${agentHandoffInfo(n)}
       ${blockerBadge(n)}
+      ${edgeStatusBadge(n, wf)}
       <span class="nport" data-port="out"></span>
       ${n.locked ? '<span class="lock-badge">🔒</span>' : ''}`;
     // 선택된 에이전트의 담당 노드 강조
@@ -1313,6 +1327,34 @@ function startDrag(e, node) {
 }
 
 // === EdgeLayer ===
+// 연결 기록 — localStorage에 연결/해제 이벤트 저장
+function logEdgeEvent(type, fromId, toId, label) {
+  try {
+    const key = LS_KEY + '_edgelog';
+    const log = JSON.parse(localStorage.getItem(key) || '[]');
+    const wf = currentWorkflow();
+    const fromN = wf.nodes.find(n => n.id === fromId);
+    const toN = wf.nodes.find(n => n.id === toId);
+    log.push({ type, from: fromN ? fromN.label : fromId, to: toN ? toN.label : toId, label: label || '', ts: new Date().toISOString() });
+    localStorage.setItem(key, JSON.stringify(log.slice(-100)));
+  } catch (e) {}
+}
+// 엣지 플래시 — 방금 연결된 선 강조
+function flashEdge(edgeId) {
+  const svg = document.getElementById('edges');
+  const path = svg ? svg.querySelector('[data-id="' + edgeId + '"]') : null;
+  if (!path) return;
+  path.classList.add('edge-flash');
+  setTimeout(() => path.classList.remove('edge-flash'), 1200);
+}
+// 노드 연결 상태 — 연결된 엣지 수 + 미연결 경고
+function edgeStatusBadge(n, wf) {
+  const inCnt = wf.edges.filter(e => e.to === n.id).length;
+  const outCnt = wf.edges.filter(e => e.from === n.id).length;
+  if (n.type === 'start' || n.type === 'end') return '';
+  if (inCnt === 0 && outCnt === 0) return '<span class="edge-warn" title="미연결 노드">⚠ 미연결</span>';
+  return '<span class="edge-ok" title="연결됨 (' + (inCnt + outCnt) + '개)">🔗 ' + (inCnt + outCnt) + '</span>';
+}
 function renderEdges() {
   const svg = document.getElementById('edges');
   // defs(marker)는 유지하고 line/text만 제거 — 화살표 보존
@@ -1327,8 +1369,8 @@ function renderEdges() {
     const from = nodeMap.get(e.from);
     const to = nodeMap.get(e.to);
     if (!from || !to) { console.warn('orphan edge', e.id); return; }
-    const x1 = from.x + 90, y1 = from.y + 26;
-    const x2 = to.x + 90, y2 = to.y + 26;
+    const x1 = from.x + 180, y1 = from.y + 26;
+    const x2 = to.x + 180, y2 = to.y + 26;
     const isActive = runState && (runState.currentId === e.from || runState.currentId === e.to);
     // 베지어 곡선 엣지
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -1372,6 +1414,12 @@ document.addEventListener('mousedown', (e) => {
       wf.edges.push({ id: 'e_' + Date.now().toString(36), from: fromId, to: target.dataset.id, label });
       pushHistory();
       saveStore(); renderAll();
+      // 연결 성공 피드백 + 기록
+      const fromN = wf.nodes.find(n => n.id === fromId);
+      const toN = wf.nodes.find(n => n.id === target.dataset.id);
+      toast('🔗 연결됨: ' + (fromN ? fromN.label : fromId) + ' → ' + (toN ? toN.label : target.dataset.id) + (label ? ' [' + label + ']' : ''));
+      logEdgeEvent('connect', fromId, target.dataset.id, label);
+      flashEdge(wf.edges[wf.edges.length - 1].id);
     }
     connectFrom = null;
     tempEdge = null; renderTempEdge();
@@ -1384,7 +1432,7 @@ document.addEventListener('mousedown', (e) => {
     if (from) {
       const rect = document.getElementById('canvas-wrap').getBoundingClientRect();
       tempEdge = {
-        x1: from.x + 90, y1: from.y + 26,
+        x1: from.x + 180, y1: from.y + 26,
         x2: (ev.clientX - rect.left - panX) / zoom,
         y2: (ev.clientY - rect.top - panY) / zoom
       };
@@ -4298,6 +4346,27 @@ const MORE_ITEMS = [
   ['테스트', 'btn-test'], ['시뮬레이션', 'btn-sim'], ['거버넌스', 'btn-gov'],
   ['정렬', 'btn-align'],
 ];
+// 연결 기록 렌더
+function renderEdgeLog() {
+  const body = document.getElementById('edge-log-body');
+  if (!body) return;
+  try {
+    const log = JSON.parse(localStorage.getItem(LS_KEY + '_edgelog') || '[]');
+    body.innerHTML = log.length === 0
+      ? '<span style="color:var(--panel-text-faint)">연결 기록 없음</span>'
+      : [...log].reverse().slice(0, 40).map(l => {
+          const icon = l.type === 'connect' ? '🔗' : '✂️';
+          const color = l.type === 'connect' ? 'var(--accent)' : 'var(--red)';
+          return '<div style="padding:6px 0;border-bottom:1px solid var(--panel-border);display:flex;justify-content:space-between;gap:8px">' +
+            '<span style="color:' + color + '">' + icon + ' ' + escapeHtml(l.from) + ' → ' + escapeHtml(l.to) + (l.label ? ' <em style="opacity:.7">[' + escapeHtml(l.label) + ']</em>' : '') + '</span>' +
+            '<span style="color:var(--panel-text-faint);font-size:10px;white-space:nowrap">' + l.ts.slice(5, 16).replace('T', ' ') + '</span></div>';
+        }).join('');
+  } catch (e) { body.innerHTML = '오류'; }
+}
+
+// 더보기 메뉴에 연결 기록 항목 추가
+const MORE_EDGE_ITEMS = [['🔗 연결 기록', 'edge-log']];
+const _origBuild = buildMoreMenu;
 function buildMoreMenu() {
   const menu = document.getElementById('more-menu');
   if (!menu) return;
@@ -4308,6 +4377,17 @@ function buildMoreMenu() {
     return '<button class="mm-item" data-target="' + id + '" style="display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:var(--panel-text);font-size:13px;cursor:pointer">' + label + '</button>';
   }).join('');
   // 메뉴 항목 클릭 → 원본 버튼 트리거
+  // 연결 기록 항목 추가
+  const edgeItem = document.createElement('button');
+  edgeItem.className = 'mm-item';
+  edgeItem.textContent = '🔗 연결 기록';
+  edgeItem.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:var(--panel-text);font-size:13px;cursor:pointer';
+  edgeItem.addEventListener('click', () => {
+    menu.style.display = 'none';
+    const panel = document.getElementById('edge-log-panel');
+    if (panel) { panel.style.display = 'block'; renderEdgeLog(); }
+  });
+  menu.appendChild(edgeItem);
   menu.querySelectorAll('.mm-item').forEach(item => {
     item.addEventListener('click', () => {
       const target = document.getElementById(item.dataset.target);
@@ -4505,6 +4585,9 @@ document.getElementById('btn-sim').addEventListener('click', simulateWorkflow);
 document.getElementById('btn-gov').addEventListener('click', () => {
   document.getElementById('gov-panel').style.display = 'block';
   renderGovernance();
+});
+document.getElementById('edgelog-close').addEventListener('click', () => {
+  document.getElementById('edge-log-panel').style.display = 'none';
 });
 document.getElementById('gov-close').addEventListener('click', () => {
   document.getElementById('gov-panel').style.display = 'none';

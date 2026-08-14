@@ -1014,6 +1014,8 @@
           <button class="tpl-btn" data-tpl="approval">🛡 승인 프로세스</button>
           <button class="tpl-btn" data-tpl="content">✍️ 콘텐츠 제작</button>
           <button class="tpl-btn" data-tpl="pipeline">📊 데이터 파이프라인</button>
+          <button class="tpl-btn" data-tpl="research">🔎 에이전트 리서치</button>
+          <button class="tpl-btn" data-tpl="review">📝 AI 콘텐츠 검토</button>
         </div>
         <div style="margin-top:10px;border-top:1px solid var(--panel-border);padding-top:8px">
           <strong style="font-size:12px;color:var(--accent)">📦 내장 예시</strong>
@@ -1437,6 +1439,23 @@ function removeNode(id) {
   pushHistory(); saveStore(); renderAll();
   selected = null;
   toast('🗑 노드 삭제');
+}
+// 서버 템플릿 로드 — DB wf_workflows에서 가져와 설치
+async function loadTplFromServer(wfId) {
+  try {
+    const r = await fetch(API_BASE + '/api/workflows');
+    const j = await r.json();
+    const wf = (j.workflows || []).find(w => w.id === wfId);
+    if (!wf) { toast('템플릿 로드 실패'); return; }
+    const detail = await fetch(API_BASE + '/api/workflows/' + wfId).then(r => r.json());
+    const data = detail.workflow && detail.workflow.data ? (typeof detail.workflow.data === 'string' ? JSON.parse(detail.workflow.data) : detail.workflow.data) : { nodes: [], edges: [] };
+    const id = wfId + '_' + Date.now().toString(36);
+    const copy = { id, name: wf.name, nodes: (data.nodes || []).map(n => ({ ...n })), edges: (data.edges || []).map(e => ({ ...e })) };
+    store.workflows.push(copy);
+    store.activeWorkflowId = id;
+    saveStore(true); renderAll();
+    toast('✅ 템플릿 설치: ' + wf.name);
+  } catch (e) { toast('템플릿 로드 실패 (서버 필요)'); }
 }
 // 노드 팔레트 — 드래그 앤 드롭으로 노드 생성
 const PALETTE_TYPES = [
@@ -2536,6 +2555,10 @@ document.getElementById('run-close').addEventListener('click', () => {
 document.querySelectorAll('.tpl-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tpl = btn.dataset.tpl;
+    if (tpl === 'research' || tpl === 'review') {
+      loadTplFromServer(tpl === 'research' ? 'wf_tpl_research' : 'wf_tpl_review');
+      return;
+    }
     const wf = defaultWorkflow('템플릿: ' + (tpl === 'approval' ? '승인 프로세스' : tpl === 'content' ? '콘텐츠 제작' : '데이터 파이프라인'));
     if (tpl === 'approval') {
       wf.nodes = [

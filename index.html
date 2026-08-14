@@ -624,6 +624,7 @@
   .node-status-pill.s-review{color:#ffc24d;border-color:#ffc24d;background:rgba(255,194,77,.12)}
   .node-status-pill.s-done{color:#00ff87;border-color:#00ff87;background:rgba(0,255,135,.12)}
   .node-status-pill.s-blocked{color:#ff5d5d;border-color:#ff5d5d;background:rgba(255,93,93,.12)}
+  .fb-btn:hover{background:var(--dark-3);color:var(--accent)}
   .status-badge{
     position:absolute;bottom:-9px;right:10px;
     font-size:9px;font-weight:600;
@@ -995,6 +996,11 @@
     <aside id="sidebar">
       <button id="add-wf">+ 새 워크플로우</button>
       <ul id="wf-list"></ul>
+      <div id="node-palette" style="padding:10px 12px;border-top:1px solid var(--panel-border);margin-top:8px">
+        <strong style="font-size:12px;color:var(--accent)">🧩 노드 팔레트</strong>
+        <div style="font-size:10px;color:var(--panel-text-faint);margin:2px 0 6px">캔버스로 드래그하세요</div>
+        <div id="palette-items" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
       <div id="template-panel" style="display:none;padding:10px;border-top:1px solid var(--panel-border)">
         <strong style="font-size:12px;color:var(--panel-text-dim)">템플릿</strong>
         <button class="tpl-btn" data-tpl="approval">승인 프로세스</button>
@@ -1343,6 +1349,125 @@ function removeNodeTooltip() {
   const tt = document.getElementById('node-tooltip');
   if (tt) tt.remove();
 }
+// 선택 노드 플로팅 액션 바
+function renderFloatingBar() {
+  const old = document.getElementById('floating-bar');
+  if (old) old.remove();
+  if (!selected || selected.type !== 'node') return;
+  const wf = currentWorkflow();
+  const n = wf.nodes.find(x => x.id === selected.id);
+  if (!n) return;
+  const el = document.getElementById('canvas').querySelector('[data-id="' + n.id + '"]');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const bar = document.createElement('div');
+  bar.id = 'floating-bar';
+  bar.style.cssText = 'position:fixed;top:' + Math.max(8, r.top - 38) + 'px;left:' + r.left + 'px;z-index:95;display:flex;gap:4px;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:10px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.35)';
+  const btns = [
+    ['▶', '실행', () => { if (runState && runState.running) stopRun(); else startRun(); }],
+    ['⧉', '복제', () => { duplicateNode(n.id); }],
+    ['🗑', '삭제', () => { removeNode(n.id); }],
+    ['🔗', '연결', () => { connectFrom = n.id; toast('연결할 대상 노드를 클릭하세요'); }],
+    ['⬆', '상태', () => { cycleNodeStatus(n); }]
+  ];
+  bar.innerHTML = btns.map(([icon, label, _]) =>
+    '<button class="fb-btn" data-label="' + label + '" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 8px;background:transparent;border:none;border-radius:8px;color:var(--panel-text);font-size:14px;cursor:pointer;min-width:40px">' + icon +
+    '<span style="font-size:9px;color:var(--panel-text-faint)">' + label + '</span></button>').join('');
+  document.body.appendChild(bar);
+  bar.querySelectorAll('.fb-btn').forEach((b, i) => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); btns[i][2](); });
+  });
+}
+function duplicateNode(id) {
+  const wf = currentWorkflow();
+  const n = wf.nodes.find(x => x.id === id);
+  if (!n) return;
+  const cp = JSON.parse(JSON.stringify(n));
+  cp.id = 'n_' + Date.now().toString(36);
+  cp.x += 40; cp.y += 40;
+  wf.nodes.push(cp);
+  pushHistory(); saveStore(); renderAll();
+  selected = { type: 'node', id: cp.id };
+  renderInspector();
+  toast('⧉ 노드 복제');
+}
+function removeNode(id) {
+  const wf = currentWorkflow();
+  wf.nodes = wf.nodes.filter(x => x.id !== id);
+  wf.edges = wf.edges.filter(e => e.from !== id && e.to !== id);
+  pushHistory(); saveStore(); renderAll();
+  selected = null;
+  toast('🗑 노드 삭제');
+}
+// 노드 팔레트 — 드래그 앤 드롭으로 노드 생성
+const PALETTE_TYPES = [
+  ['start', '시작'], ['process', '처리'], ['decision', '판단'], ['approval', '승인'],
+  ['supervisor', '감독'], ['reviewer', '검토'], ['connector', '연결'], ['vote', '투표'], ['end', '종료']
+];
+function renderPalette() {
+  const wrap = document.getElementById('palette-items');
+  if (!wrap) return;
+  wrap.innerHTML = PALETTE_TYPES.map(([t, label]) => {
+    const conf = NODE_TYPES[t];
+    return '<div class="palette-item" data-type="' + t + '" draggable="true" style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;cursor:grab;font-size:12px;color:var(--panel-text)">' +
+      '<span style="width:10px;height:10px;border-radius:50%;background:' + (conf ? conf.color : '#888') + '"></span>' +
+      '<span>' + label + '</span></div>';
+  }).join('');
+  wrap.querySelectorAll('.palette-item').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', el.dataset.type);
+      el.style.opacity = '.5';
+    });
+    el.addEventListener('dragend', () => { el.style.opacity = '1'; });
+  });
+}
+// 캔버스 드롭 — 팔레트에서 놓은 노드 생성
+// 스페이스바 팬 — 스페이스 누른 채 드래그로 캔버스 이동
+let panMode = false, panStart2 = null;
+function setupSpacePan() {
+  const cw = document.getElementById('canvas-wrap');
+  if (!cw || cw.dataset.panReady) return;
+  cw.dataset.panReady = '1';
+  cw.addEventListener('mousedown', (e) => {
+    if (e.code === 'Space' || e.which === 2 || e.button === 1) {
+      e.preventDefault();
+      panMode = true; panStart2 = { x: e.clientX, y: e.clientY, px: panX, py: panY };
+    }
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!panMode || !panStart2) return;
+    panX = panStart2.px + (e.clientX - panStart2.x);
+    panY = panStart2.py + (e.clientY - panStart2.y);
+    renderCanvas(); renderEdges();
+  });
+  window.addEventListener('mouseup', () => { panMode = false; panStart2 = null; });
+}
+function setupCanvasDrop() {
+  const cw = document.getElementById('canvas-wrap');
+  if (!cw || cw.dataset.dropReady) return;
+  cw.dataset.dropReady = '1';
+  cw.addEventListener('dragover', (e) => e.preventDefault());
+  cw.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const type = e.dataTransfer.getData('text/plain');
+    if (!type || !NODE_TYPES[type]) return;
+    const rect = cw.getBoundingClientRect();
+    const x = Math.round((e.clientX - rect.left - panX) / zoom - 90);
+    const y = Math.round((e.clientY - rect.top - panY) / zoom - 26);
+    addNodeAt(type, x, y);
+  });
+}
+function addNodeAt(type, x, y) {
+  const wf = currentWorkflow();
+  if (!wf) return;
+  const id = 'n_' + Date.now().toString(36);
+  wf.nodes.push({ id, type, x, y, label: NODE_TYPES[type].label, desc: '', assignee: '', due: '', tags: [], status: '대기' });
+  pushHistory();
+  saveStore(); renderAll();
+  selected = { type: 'node', id };
+  renderInspector();
+  toast('➕ ' + NODE_TYPES[type].label + ' 노드 추가');
+}
 function renderCanvas() {
   indexCounter = {};  // 노드 순번 초기화
   removeNodeTooltip();  // 잔상 툴팁 제거
@@ -1381,7 +1506,10 @@ function renderCanvas() {
       ${pipelineStatusBadge(n)}
       ${agentHandoffInfo(n)}
       ${blockerBadge(n)}
+      ${resultPreviewBadge(n)}
+      ${n.collapsed ? '<span style="font-size:9px;color:var(--panel-text-faint)">접힘</span>' : ''}
       ${statusPill(n)}
+      ${validationBadge(n, wf)}
       ${edgeStatusBadge(n, wf)}
       ${n.agentId ? agentLiveBadge(n.agentId) : ''}
       <span class="nport" data-port="out"></span>
@@ -1419,6 +1547,7 @@ function renderCanvas() {
     });
     el.addEventListener('dblclick', (e) => { e.stopPropagation(); enableInlineEdit(n); });
     canvas.appendChild(el);
+  renderFloatingBar();
     attachNodeTouch(n);  // 터치 드래그/연결/제스처 연결
   });
   renderGroups();
@@ -1429,6 +1558,33 @@ function selectNode(id) {
   renderAll();
 }
 
+// 스냅 가이드 — 드래그 중 주변 노드와 정렬 안내선
+const GUIDE_TOL = 8;
+function clearSnapGuides() {
+  document.querySelectorAll('.snap-guide').forEach(g => g.remove());
+}
+function renderSnapGuides(dragId) {
+  clearSnapGuides();
+  const wf = currentWorkflow();
+  const n = wf.nodes.find(x => x.id === dragId);
+  if (!n) return;
+  const canvas = document.getElementById('canvas');
+  const cr = canvas.getBoundingClientRect();
+  const cx = cr.left + n.x + 90 + panX, cy = cr.top + n.y + 26 + panY;
+  const guide = (x1, y1, x2, y2, horiz) => {
+    const el = document.createElement('div');
+    el.className = 'snap-guide';
+    el.style.cssText = 'position:fixed;z-index:60;background:var(--accent);box-shadow:0 0 4px var(--accent);' +
+      (horiz ? 'left:' + x1 + 'px;top:' + y1 + 'px;width:' + (x2 - x1) + 'px;height:1px' : 'top:' + y1 + 'px;left:' + x1 + 'px;height:' + (y2 - y1) + 'px;width:1px');
+    document.body.appendChild(el);
+  };
+  wf.nodes.forEach(o => {
+    if (o.id === dragId) return;
+    const ox = cr.left + o.x + 90 + panX, oy = cr.top + o.y + 26 + panY;
+    if (Math.abs(ox - cx) < GUIDE_TOL) guide(Math.min(ox, cx), Math.min(oy, cy), Math.max(ox, cx), Math.max(oy, cy), false);
+    if (Math.abs(oy - cy) < GUIDE_TOL) guide(Math.min(ox, cx), Math.min(oy, cy), Math.max(ox, cx), Math.max(oy, cy), true);
+  });
+}
 function startDrag(e, node) {
   e.preventDefault();
   removeNodeTooltip();  // 드래그 시작 시 툴팁 제거
@@ -1462,11 +1618,13 @@ function startDrag(e, node) {
       }
     });
     renderEdgesThrottled();
+    renderSnapGuides(node.id);
   }
   function up() {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
     removeNodeTooltip();  // 드래그 종료 시 툴팁 제거
+    clearSnapGuides();
     if (dragEl) dragEl.classList.remove('drag-ghost');
     if (node.x !== origX || node.y !== origY) pushHistory();
     saveStore();
@@ -2682,6 +2840,27 @@ function statusPill(n) {
   const s = n.status || '대기';
   const cls = STATUS_CLASS[s] || 'waiting';
   return '<span class="node-status-pill s-' + cls + '" data-status="1" title="상태 변경 (클릭)">' + s + '</span>';
+}
+// 실행 결과 미리보기 배지
+function resultPreviewBadge(n) {
+  const r = (n._result !== undefined && n._result !== null) ? n._result : null;
+  if (r === null) return '';
+  const ok = r.ok !== false;
+  const txt = typeof r === 'object' ? (r.summary || (r.count !== undefined ? r.count + '건' : '완료')) : String(r).slice(0, 14);
+  return '<span class="result-preview" style="position:absolute;bottom:-9px;right:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;color:' + (ok ? 'var(--accent)' : 'var(--red)') + ';background:rgba(0,0,0,.6);border:1px solid ' + (ok ? 'rgba(0,255,135,.3)' : 'rgba(255,93,93,.3)') + ';z-index:6">' + (ok ? '✓ ' : '✗ ') + escapeHtml(txt) + '</span>';
+}
+// 입력 유효성 경고 배지
+function validationBadge(n, wf) {
+  if (n.type === 'start' || n.type === 'end') return '';
+  const issues = [];
+  if (!n.label) issues.push('이름 없음');
+  if (!n.agentId) issues.push('담당자 없음');
+  const inCnt = wf.edges.filter(e => e.to === n.id).length;
+  const outCnt = wf.edges.filter(e => e.from === n.id).length;
+  if (inCnt === 0 && n.type !== 'start') issues.push('입력 없음');
+  if (outCnt === 0 && n.type !== 'end') issues.push('출력 없음');
+  if (!issues.length) return '';
+  return '<span class="val-warn" title="' + issues.join(', ') + '" style="position:absolute;top:-9px;left:6px;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;color:#ffc24d;background:rgba(255,194,77,.15);border:1px solid rgba(255,194,77,.4);z-index:6">⚠</span>';
 }
 function setExecStatus(nodeId, status) {
   const el = document.querySelector(`#canvas .node[data-id="${nodeId}"]`);
@@ -4976,6 +5155,9 @@ async function sendMcpCommand(text) {
   }
 
 // === 초기화 ===
+renderPalette();
+setupCanvasDrop();
+setupSpacePan();
 loadStore();
 const wf0 = currentWorkflow();
 if (wf0) document.getElementById('wf-name').value = wf0.name;

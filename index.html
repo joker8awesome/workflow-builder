@@ -995,6 +995,7 @@
   <div id="app">
     <aside id="sidebar">
       <button id="add-wf">+ 새 워크플로우</button>
+      <div id="wf-filter" style="display:flex;gap:4px;padding:8px 12px 0"></div>
       <ul id="wf-list"></ul>
       <div id="node-palette" style="padding:10px 12px;border-top:1px solid var(--panel-border);margin-top:8px">
         <strong style="font-size:12px;color:var(--accent)">🧩 노드 팔레트</strong>
@@ -1003,9 +1004,11 @@
       </div>
       <div id="template-panel" style="display:none;padding:10px;border-top:1px solid var(--panel-border)">
         <strong style="font-size:12px;color:var(--panel-text-dim)">템플릿</strong>
-        <button class="tpl-btn" data-tpl="approval">승인 프로세스</button>
-        <button class="tpl-btn" data-tpl="content">콘텐츠 제작</button>
-        <button class="tpl-btn" data-tpl="pipeline">데이터 파이프라인</button>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button class="tpl-btn" data-tpl="approval">🛡 승인 프로세스</button>
+          <button class="tpl-btn" data-tpl="content">✍️ 콘텐츠 제작</button>
+          <button class="tpl-btn" data-tpl="pipeline">📊 데이터 파이프라인</button>
+        </div>
         <div style="margin-top:10px;border-top:1px solid var(--panel-border);padding-top:8px">
           <strong style="font-size:12px;color:var(--accent)">📦 내장 예시</strong>
           <div id="example-list" style="margin-top:6px;display:flex;flex-direction:column;gap:6px"></div>
@@ -1207,6 +1210,35 @@ function currentWorkflow() {
 }
 
 // === Sidebar ===
+// 워크플로우 상태 파생 (노드 상태 기반)
+function wfStatus(wf) {
+  const nodes = wf.nodes || [];
+  if (!nodes.length) return '대기';
+  if (nodes.some(n => n.status === '블로커')) return '블로커';
+  if (nodes.every(n => n.type === 'start' || n.type === 'end' || n.status === '완료')) return '완료';
+  if (nodes.some(n => n.status === '진행' || n.status === '검토')) return '진행';
+  return '대기';
+}
+let wfFilter = '전체';
+function bindWfFilter() {
+  const wrap = document.getElementById('wf-filter');
+  if (!wrap || wrap.dataset.bound) return;
+  wrap.dataset.bound = '1';
+  wrap.innerHTML = ['전체', '진행', '완료', '블로커'].map(f =>
+    '<button class="wf-filter-btn" data-f="' + f + '" style="flex:1;padding:4px 0;font-size:10px;border-radius:8px;background:var(--dark-3);border:1px solid var(--dark-border);color:var(--panel-text-faint);cursor:pointer">' + f + '</button>'
+  ).join('');
+  wrap.querySelectorAll('.wf-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      wfFilter = btn.dataset.f;
+      wrap.querySelectorAll('.wf-filter-btn').forEach(b => {
+        const on = b.dataset.f === wfFilter;
+        b.style.background = on ? 'var(--accent)' : 'var(--dark-3)';
+        b.style.color = on ? '#04100a' : 'var(--panel-text-faint)';
+      });
+      renderSidebar();
+    });
+  });
+}
 function renderSidebar() {
   const ul = document.getElementById('wf-list');
   ul.innerHTML = '';
@@ -1225,7 +1257,7 @@ function renderSidebar() {
       hint.style.display = 'block';
     } else if (hint) hint.style.display = 'none';
   }, 100);
-  store.workflows.forEach(wf => {
+  store.workflows.filter(wf => wfFilter === '전체' || wfStatus(wf) === wfFilter).forEach(wf => {
     const li = document.createElement('li');
     li.title = wf.name + (wf.nodes ? ' (' + wf.nodes.length + ' 노드)' : '');
     const nameSpan = document.createElement('span');
@@ -1368,7 +1400,8 @@ function renderFloatingBar() {
     ['⧉', '복제', () => { duplicateNode(n.id); }],
     ['🗑', '삭제', () => { removeNode(n.id); }],
     ['🔗', '연결', () => { connectFrom = n.id; toast('연결할 대상 노드를 클릭하세요'); }],
-    ['⬆', '상태', () => { cycleNodeStatus(n); }]
+    ['⬆', '상태', () => { cycleNodeStatus(n); }],
+    ['📁', '접기', () => { n.collapsed = !n.collapsed; saveStore(); renderCanvas(); renderFloatingBar(); }]
   ];
   bar.innerHTML = btns.map(([icon, label, _]) =>
     '<button class="fb-btn" data-label="' + label + '" style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 8px;background:transparent;border:none;border-radius:8px;color:var(--panel-text);font-size:14px;cursor:pointer;min-width:40px">' + icon +
@@ -1424,6 +1457,85 @@ function renderPalette() {
 // 캔버스 드롭 — 팔레트에서 놓은 노드 생성
 // 스페이스바 팬 — 스페이스 누른 채 드래그로 캔버스 이동
 let panMode = false, panStart2 = null;
+// 마퀴 선택 — 캔버스 빈 곳 드래그로 다중 선택
+let marquee = null;
+function setupMarquee() {
+  const cw = document.getElementById('canvas-wrap');
+  if (!cw || cw.dataset.mqReady) return;
+  cw.dataset.mqReady = '1';
+  cw.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.node') || e.target.closest('.nport') || e.target.closest('#edges')) return;
+    if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
+    marquee = { x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!marquee) return;
+    const el = document.getElementById('marquee-box');
+    const x = Math.min(marquee.x, e.clientX), y = Math.min(marquee.y, e.clientY);
+    const w = Math.abs(e.clientX - marquee.x), h = Math.abs(e.clientY - marquee.y);
+    if (!el) {
+      const d = document.createElement('div');
+      d.id = 'marquee-box';
+      d.style.cssText = 'position:fixed;z-index:80;border:1px dashed var(--accent);background:rgba(0,255,135,.08);pointer-events:none';
+      document.body.appendChild(d);
+    }
+    const box = document.getElementById('marquee-box');
+    box.style.left = x + 'px'; box.style.top = y + 'px'; box.style.width = w + 'px'; box.style.height = h + 'px';
+  });
+  window.addEventListener('mouseup', (e) => {
+    const box = document.getElementById('marquee-box');
+    if (!box || !marquee) return;
+    const bx = parseFloat(box.style.left), by = parseFloat(box.style.top);
+    const bw = parseFloat(box.style.width), bh = parseFloat(box.style.height);
+    box.remove();
+    if (bw < 5 || bh < 5) { marquee = null; return; }
+    // 노드와 겹치는지 판정
+    const wf = currentWorkflow();
+    const canvas = document.getElementById('canvas');
+    const cr = canvas.getBoundingClientRect();
+    wf.nodes.forEach(n => {
+      const nx = cr.left + n.x + panX, ny = cr.top + n.y + panY;
+      if (nx >= bx && nx <= bx + bw && ny >= by && ny <= by + bh) {
+        multiSelect.add(n.id);
+      }
+    });
+    renderCanvas();
+    marquee = null;
+  });
+}
+// 노드 복사/붙여넣기 (Ctrl+C / Ctrl+V)
+let clipboardNodes = [];
+function copySelectedNodes() {
+  const wf = currentWorkflow();
+  if (!wf) return;
+  const ids = multiSelect.size ? [...multiSelect] : (selected && selected.type === 'node' ? [selected.id] : []);
+  if (!ids.length) return;
+  clipboardNodes = ids.map(id => {
+    const n = wf.nodes.find(x => x.id === id);
+    return n ? JSON.parse(JSON.stringify(n)) : null;
+  }).filter(Boolean);
+  toast('⧉ 복사: ' + clipboardNodes.length + '개 노드');
+}
+function pasteNodes() {
+  const wf = currentWorkflow();
+  if (!wf || !clipboardNodes.length) return;
+  const idMap = {};
+  const newNodes = clipboardNodes.map(n => {
+    const nid = 'n_' + Date.now().toString(36) + Math.floor(Math.random() * 100);
+    idMap[n.id] = nid;
+    return { ...JSON.parse(JSON.stringify(n)), id: nid, x: n.x + 60, y: n.y + 60, _result: undefined };
+  });
+  wf.nodes.push(...newNodes);
+  // 내부 엣지 복사
+  clipboardNodes.forEach(n => {
+    wf.edges.filter(e => e.from === n.id).forEach(e => {
+      if (idMap[e.to]) wf.edges.push({ id: 'e_' + Date.now().toString(36), from: idMap[e.from], to: idMap[e.to], label: e.label });
+    });
+  });
+  multiSelect = new Set(newNodes.map(n => n.id));
+  pushHistory(); saveStore(); renderAll();
+  toast('📋 붙여넣기: ' + newNodes.length + '개 노드');
+}
 function setupSpacePan() {
   const cw = document.getElementById('canvas-wrap');
   if (!cw || cw.dataset.panReady) return;
@@ -1481,6 +1593,7 @@ function renderCanvas() {
     const isSel = selected.type === 'node' && selected.id === n.id;
     const isMulti = multiSelect.has(n.id);
     const isRun = runState && runState.currentId === n.id;
+    if (isRun) { setTimeout(() => { const el2 = document.querySelector('#canvas .node[data-id="' + n.id + '"]'); if (el2) { el2.style.boxShadow = '0 0 0 3px var(--accent)'; setTimeout(() => { el2.style.boxShadow = ''; }, 700); } }, 50); }
     const isVisited = runState && runState.visited && runState.visited.has(n.id);
     const el = document.createElement('div');
     el.className = 'node type-' + n.type
@@ -2347,7 +2460,11 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (e.shiftKey) redo(); else undo();
     return;
-  }
+  
+    // 복사/붙여넣기
+    if (e.ctrlKey && (e.key === 'c' || e.key === 'C')) { copySelectedNodes(); }
+    if (e.ctrlKey && (e.key === 'v' || e.key === 'V')) { pasteNodes(); }
+}
   // 복제
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
     e.preventDefault();
@@ -4624,15 +4741,14 @@ function toggleTestPanel() {
 
 // 4. 단축키 도움말 패널
 function showShortcutPanel() {
-  toastHTML('<div style="min-width:360px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">⌨️ 단축키</strong>' +
-    '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+Z / Ctrl+Shift+Z</td><td>실행 취소 / 다시 실행</td></tr>' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+D</td><td>노드 복제</td></tr>' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Ctrl+K</td><td>명령 팔레트</td></tr>' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">Delete</td><td>선택 삭제</td></tr>' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">? / Shift+?</td><td>단축키 도움말</td></tr>' +
-    '<tr><td style="padding:4px 0;color:var(--panel-text-dim)">화살표</td><td>노드 이동 (Shift=크게)</td></tr>' +
-    '</table></div>', 8000);
+  const cat = (title, rows) => '<div style="margin-bottom:10px"><div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:4px">' + title + '</div>' +
+    rows.map(([k, v]) => '<div style="display:flex;justify-content:space-between;gap:16px;padding:4px 0;font-size:12px"><span style="color:var(--panel-text-dim);white-space:nowrap">' + k + '</span><span>' + v + '</span></div>').join('') + '</div>';
+  toastHTML('<div style="min-width:400px"><strong style="display:block;margin-bottom:10px;color:var(--accent)">⌨️ 단축키 도움말</strong>' +
+    cat('✏️ 편집', [['Ctrl+Z / Ctrl+Shift+Z', '실행 취소 / 다시 실행'], ['Ctrl+D', '노드 복제'], ['Ctrl+C / Ctrl+V', '노드 복사 / 붙여넣기'], ['Delete', '선택 삭제']]) +
+    cat('🖱️ 선택', [['Shift+클릭', '다중 선택'], ['드래그(빈 곳)', '영역 선택'], ['화살표', '노드 이동 (Shift=크게)']]) +
+    cat('▶ 실행', [['Enter (실행모드)', '다음 단계'], ['중간버튼 드래그', '캔버스 이동'], ['스페이스+드래그', '캔버스 이동']]) +
+    cat('🔍 보기', [['Ctrl+K', '명령 팔레트'], ['휠', '줌'], ['?', '단축키 도움말']]) +
+    '</div>', 10000);
 }
 
 // 5. 온보딩 워크스루 — 첫 방문 시 안내
@@ -5158,6 +5274,8 @@ async function sendMcpCommand(text) {
 renderPalette();
 setupCanvasDrop();
 setupSpacePan();
+setupMarquee();
+bindWfFilter();
 loadStore();
 const wf0 = currentWorkflow();
 if (wf0) document.getElementById('wf-name').value = wf0.name;

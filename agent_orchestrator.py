@@ -249,6 +249,7 @@ def run_workflow(wf_id, dry=False):
     visited = set()
     report_chain = []
 
+    _memo = {}
     def visit(node_id, parent_trace=None, depth=0):
         if node_id in visited:
             return
@@ -262,11 +263,26 @@ def run_workflow(wf_id, dry=False):
         import time as _t
         t0 = _t.time()
 
+        # 지연 스텝 — 노드 delay 속성 (초)
+        delay_s = float(node.get("delay") or 0)
+        if delay_s > 0:
+            import time as _delay_t
+            _delay_t.sleep(min(delay_s, 3600))
+
+        # 스텝 결과 메모이즈 — 재실행 시 완료 스텝 스킵
+        memo_key = (wf_id, node_id)
+        if memo_key in _memo:
+            print(f"  [memo] {node.get('label', node_id)} 결과 재사용")
+            ctx[node_id] = _memo[memo_key]
+            return None
+
         # 체크포인트 — 실행 전 기록
         if session:
             checkpoint(sess_id, wf_id, node_id, "running", {"label": node.get("label", "")})
 
         # Supervisor 노드: 작업 분해 → 하위 노드 병렬 실행 (fan-out/fan-in)
+        # 실행 결과 메모이즈 — execute_node 후 저장
+        _node_results = {}
         if node.get("type") == "supervisor":
             children = [e["to"] for e in wf_edges if e["from"] == node_id]
             print(f"  [supervisor] {node.get('label','')} → 하위 {len(children)}개 (병렬)")
@@ -302,6 +318,9 @@ def run_workflow(wf_id, dry=False):
                 print(f"  명령: {prev_agent} → {agent_id} ({node.get('label','')}) [ref:{ref}]")
 
         result, next_id = execute_node(node, ctx, session or {"session_id": "-"})
+        # 실행 결과 메모이즈
+        if result and result.get("ok"):
+            _memo[(wf_id, node_id)] = result
         dur_ms = int((_t.time() - t0) * 1000)
 
         # 스팬 기록

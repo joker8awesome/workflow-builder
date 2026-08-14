@@ -71,7 +71,7 @@ async function callTool(name, args, ctx) {
   // 감사 로그
   try {
     await pool.query('INSERT INTO audit_logs (actor, agent_id, resource, action, detail) VALUES ($1,$2,$3,$4,$5)',
-      ['agent', agent_id, 'mcp.' + name, 'call', JSON.stringify(args || {}).slice(0, 500)]);
+      [agent_id, agent_id, JSON.stringify(args || {}).slice(0, 500), 'mcp.' + name, JSON.stringify(args || {}).slice(0, 500)]);
   } catch (e) {}
   switch (name) {
     case 'agent.whoami': {

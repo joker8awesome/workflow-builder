@@ -226,9 +226,29 @@ def eval_condition(expr, ctx):
     except Exception:
         return False
 
+def save_run_snapshot(wf_id, node_id, phase, data):
+    """실행 스냅샷 보존 — 재현성/감사"""
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO wf_results (wf_id, node_id, result) VALUES (%s,%s,%s)",
+            (wf_id, node_id + '_' + phase, json.dumps(data, ensure_ascii=False)[:2000])
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 def run_workflow(wf_id, dry=False):
     wf = load_workflow(wf_id)
     print(f"=== 워크플로우 실행: {wf['name']} ===")
+    # 실행 스냅샷 — 시작 시각/노드 수 (wf 데이터에서 계산)
+    try:
+        _snap_data = json.loads(wf.get('data', '{}')) if isinstance(wf.get('data'), str) else (wf.get('data') or {})
+        save_run_snapshot(wf_id, 'wf', 'start', {'nodes': len(_snap_data.get('nodes', [])), 'edges': len(_snap_data.get('edges', [])), 'ts': now()})
+    except Exception:
+        pass
     sessions = create_sessions(wf)
     print(f"에이전트 세션 {len(sessions)}개 생성")
 

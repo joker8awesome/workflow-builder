@@ -143,6 +143,12 @@ app.put('/api/workflows/:id', async (req, res) => {
        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, data = EXCLUDED.data, updated_at = now()`,
       [req.params.id, name || '', JSON.stringify(data || {})]
     );
+    // 자동 버전 스냅샷 — 저장마다 wf_versions 기록 (최대 50개 보존)
+    try {
+      await pool.query('INSERT INTO wf_versions (wf_id, data, created_at) VALUES ($1,$2,now())',
+        [req.params.id, JSON.stringify(data || {})]);
+      await pool.query('DELETE FROM wf_versions WHERE wf_id = $1 AND id NOT IN (SELECT id FROM wf_versions WHERE wf_id = $1 ORDER BY id DESC LIMIT 50)', [req.params.id]);
+    } catch (e) {}
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -1035,9 +1041,38 @@ app.post('/api/examples/install', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === SSRF 방지 — 내부 IP 차단 ===
+function isInternalHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  if (h === 'localhost' || h.endsWith('.local') || h.endsWith('.internal')) return true;
+  // IPv4 내부 범위
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const [a, b] = [parseInt(m[1]), parseInt(m[2])];
+    if (a === 127 || a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 0 || a === 169 && b === 254) return true;
+  }
+  return false;
+}
+
+// === 속도 제한 — IP당 분당 N회 ===
+const rateBuckets = new Map();
+function rateLimit(key, max = 60, windowMs = 60000) {
+  const now = Date.now();
+  const bucket = rateBuckets.get(key) || { count: 0, reset: now + windowMs };
+  if (now > bucket.reset) { bucket.count = 0; bucket.reset = now + windowMs; }
+  bucket.count++;
+  rateBuckets.set(key, bucket);
+  if (rateBuckets.size > 1000) rateBuckets.clear();  // 메모리 보호
+  return bucket.count <= max;
+}
+
 // === 데이터 커넥터 API — CSV/JSON/API/DB 입력 ===
 app.post('/api/connector', async (req, res) => {
   try {
+    if (!rateLimit(req.ip || 'connector')) return res.status(429).json({ success: false, error: 'rate limited' });
     const { type, config } = req.body || {};
     const out = { success: true, data: null, meta: {} };
     if (type === 'csv') {
@@ -1060,9 +1095,20 @@ app.post('/api/connector', async (req, res) => {
     } else if (type === 'api') {
       const url = String(config && config.url || '');
       if (!url) return res.json({ success: false, error: 'URL 없음' });
+      // SSRF 방지 — 내부 주소 차단
+      try {
+        const u = new URL(url);
+        if (isInternalHost(u.hostname)) return res.json({ success: false, error: '내부 주소 차단 (SSRF 방지)' });
+      } catch (e) { return res.json({ success: false, error: 'URL 형식 오류' }); }
       const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-      const j = await r.json();
-      out.data = j;
+      const text = await r.text();
+      try {
+        out.data = JSON.parse(text);
+      } catch (e) {
+        // JSON이 아니면 텍스트로 저장 (HTML 등)
+        out.data = { text: text.slice(0, 2000) };
+        out.meta.non_json = true;
+      }
       out.meta.status = r.status;
     } else if (type === 'db') {
       const q = String(config && config.query || '');

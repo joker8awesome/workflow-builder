@@ -192,6 +192,7 @@
   #canvas .node.type-supervisor{--node-accent:#8957e5}
   #canvas .node.type-reviewer{--node-accent:#0d9488}
   #canvas .node.type-connector{--node-accent:#f78166}
+  #canvas .node.type-vote{--node-accent:#e26dd4}
   #canvas .node.type-end{--node-accent:#d1242f}
   #canvas .node:hover{border-color:color-mix(in srgb, var(--accent) 60%, var(--node-border))}
   #canvas .node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft), 0 0 18px var(--accent-glow);transform:translateY(-2px)}
@@ -1128,6 +1129,7 @@ const NODE_TYPES = {
   supervisor: { color: '#8957e5', icon: '§', label: '감독', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M7 1l6 3v6l-6 3-6-3V4z"/><circle cx="7" cy="7" r="2"/></svg>' },
   reviewer:   { color: '#0d9488', icon: '✓', label: '검토', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M1 7l4 4 8-9"/><path d="M1 7l4 4 8-9" stroke="#0d9488" stroke-width="2" fill="none"/></svg>' },
   connector:  { color: '#f78166', icon: '⇄', label: '연결', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M2 4l5-2 5 2-5 2z"/><path d="M2 7l5-2 5 2-5 2z"/><path d="M2 10l5-2 5 2-5 2z"/></svg>' },
+  vote:       { color: '#e26dd4', icon: '🗳', label: '투표', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><path d="M2 2h10v10H2z"/><path d="M4 7l2 2 4-4" stroke="#e26dd4" stroke-width="2" fill="none"/></svg>' },
   end:        { color: '#d1242f', icon: '●', label: '종료', svg: '<svg width="14" height="14" viewBox="0 0 14 14" fill="#fff"><circle cx="7" cy="7" r="5"/></svg>' }
 };
 let selected = { type: null, id: null };
@@ -2452,6 +2454,19 @@ async function executeWorkflow() {
     const n = wf.nodes.find(x => x.id === id);
     if (!n || path.includes(n)) return;
     path.push(n);
+    // 투표 노드 — 다수결 (신뢰 가중)
+    if (n.type === 'vote') {
+      document.getElementById('rs-status').textContent = '🗳 투표: ' + (n.label || '');
+      const decision = await runVoteNode(n, ctx);
+      setProactiveStatus('투표 완료: ' + (decision ? '찬성' : '반대'));
+      // Yes/No 엣지로 분기
+      const outs2 = wf.edges.filter(e => e.from === id);
+      const yesEdge = outs2.find(e => e.label === 'Yes');
+      const noEdge = outs2.find(e => e.label === 'No');
+      const nextEdge = decision ? (yesEdge || outs2[0]) : (noEdge || outs2[0]);
+      if (nextEdge) await visit(nextEdge.to);
+      return;
+    }
     // 리뷰어/리플렉션 노드 — 결과 검증 (외부 피드백)
     if (n.type === 'reviewer') {
       document.getElementById('rs-status').textContent = '🔍 검토: ' + (n.label || '');
@@ -4293,6 +4308,35 @@ async function runConnector(n) {
     logRun('연결 실패 (서버 미연결)');
   }
   return null;
+}
+
+// 1b. 투표 노드 — 여러 에이전트 답변 다수결 (신뢰 가중)
+async function runVoteNode(n, ctx) {
+  // 투표 대상: 하위 노드(에이전트) 수 = fan-out 아웃엣지 수
+  const wf = currentWorkflow();
+  const outs = wf.edges.filter(e => e.from === n.id);
+  const voters = outs.slice(0, 5);
+  const votes = [];
+  for (const edge of voters) {
+    const target = wf.nodes.find(x => x.id === edge.to);
+    if (!target) continue;
+    // 에이전트별 가중치 (신뢰 점수)
+    let weight = 1;
+    try {
+      const tr = await fetch(API_BASE + '/api/trust');
+      const tj = await tr.json();
+      const t = (tj.trust || []).find(x => x.agent_id === target.agentId);
+      if (t) weight = Math.max(0.3, t.trust / 100);
+    } catch (e) {}
+    const answer = await llmDecide(n.vote_prompt || '이 제안을 승인해야 하는가?', ctx);
+    votes.push({ agent: target.agentId || target.label || edge.to, answer, weight });
+    logRun('🗳 ' + (target.label || target.id) + ': ' + (answer ? '찬성' : '반대') + ' (가중 ' + weight.toFixed(2) + ')');
+  }
+  const yesW = votes.filter(v => v.answer).reduce((a, v) => a + v.weight, 0);
+  const noW = votes.reduce((a, v) => a + v.weight, 0) - yesW;
+  const decision = yesW >= noW;
+  logRun('🗳 투표 결과: ' + (decision ? '찬성 ' : '반대 ') + yesW.toFixed(1) + ':' + noW.toFixed(1));
+  return decision;
 }
 
 // 2. 다중 모델 라우팅 — 노드 model 속성 + 서버 테이블

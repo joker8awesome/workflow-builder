@@ -1154,8 +1154,14 @@ function nodeTooltip(n) {
   return '<strong>' + (t ? t.label : n.type) + '</strong> — ' + (n.label || '') + '<br>' +
     '<span style="font-size:11px;color:var(--panel-text-dim)">예상: ' + est + '</span>';
 }
+// 툴팁 강제 제거 — DOM 재생성 시 잔상 방지
+function removeNodeTooltip() {
+  const tt = document.getElementById('node-tooltip');
+  if (tt) tt.remove();
+}
 function renderCanvas() {
   indexCounter = {};  // 노드 순번 초기화
+  removeNodeTooltip();  // 잔상 툴팁 제거
   const canvas = document.getElementById('canvas');
   canvas.innerHTML = '';
   renderEdges();
@@ -1195,9 +1201,10 @@ function renderCanvas() {
     // 선택된 에이전트의 담당 노드 강조
     if (selectedAgent && n.agentId === selectedAgent) el.classList.add('agent-highlight');
     el.addEventListener('mouseenter', (e) => {
+      removeNodeTooltip();  // 기존 툴팁 제거 후 새로 생성 (중복 방지)
       const tt = document.createElement('div');
       tt.id = 'node-tooltip';
-      tt.style.cssText = 'position:fixed;z-index:120;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--panel-text);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+      tt.style.cssText = 'position:fixed;z-index:120;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--panel-text);pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.3);max-width:260px;white-space:normal';
       tt.innerHTML = nodeTooltip(n);
       document.body.appendChild(tt);
       const r = el.getBoundingClientRect();
@@ -1232,6 +1239,7 @@ function selectNode(id) {
 
 function startDrag(e, node) {
   e.preventDefault();
+  removeNodeTooltip();  // 드래그 시작 시 툴팁 제거
   if (lockMode || node.locked) { toast('🔒 잠긴 노드'); return; }
   if (e.shiftKey) {
     toggleMulti(node.id);
@@ -1266,6 +1274,7 @@ function startDrag(e, node) {
   function up() {
     window.removeEventListener('mousemove', move);
     window.removeEventListener('mouseup', up);
+    removeNodeTooltip();  // 드래그 종료 시 툴팁 제거
     if (dragEl) dragEl.classList.remove('drag-ghost');
     if (node.x !== origX || node.y !== origY) pushHistory();
     saveStore();
@@ -2755,6 +2764,7 @@ function attachTouchDrag(el, node) {
     function up(ev) {
       document.removeEventListener('touchmove', move);
       document.removeEventListener('touchend', up);
+    removeNodeTooltip();
       if (moved && (node.x !== origX || node.y !== origY)) pushHistory();
       saveStore();
     }

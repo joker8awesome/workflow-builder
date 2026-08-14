@@ -1,5 +1,5 @@
-// Service Worker — PWA 오프라인 캐시 (index.html + 폰트)
-const CACHE = 'wf-builder-v2';
+// Service Worker — PWA 오프라인 캐시 (v3: 더보기 메뉴 캐시 문제 해결 — 네트워크 우선 강화)
+const CACHE = 'wf-builder-v3';
 const ASSETS = [
   './index.html',
   './fonts/Isamanru-Light.woff',
@@ -16,8 +16,8 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
-  // API 요청은 캐시하지 않음 (신선도 유지)
   if (e.request.url.includes('/api/') || e.request.url.includes('/ws')) return;
+  // 네트워크 우선 — 성공 시 캐시 갱신, 실패 시에만 캐시 폴백
   e.respondWith(
     fetch(e.request)
       .then(res => {

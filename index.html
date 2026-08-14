@@ -4405,10 +4405,25 @@ function buildMoreMenu() {
 const btnMore = document.getElementById('btn-more');
 if (btnMore) btnMore.addEventListener('click', (e) => {
   e.stopPropagation();
-  const menu = document.getElementById('more-menu');
-  buildMoreMenu();
+  let menu = document.getElementById('more-menu');
+  if (!menu) {
+    menu = document.createElement('div');
+    menu.id = 'more-menu';
+    menu.style.cssText = 'position:absolute;top:46px;right:8px;z-index:90;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:6px;min-width:180px;box-shadow:0 6px 24px rgba(0,0,0,.35);display:block';
+    document.body.appendChild(menu);
+  }
+  try {
+    buildMoreMenu();
+  } catch (err) { console.warn('buildMoreMenu', err); }
   menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 });
+// 더보기 외부 클릭 시 메뉴 닫기 (안전)
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('more-menu');
+  if (menu && menu.style.display === 'block' && !e.target.closest('#btn-more') && !e.target.closest('#more-menu')) {
+    menu.style.display = 'none';
+  }
+}, true);
 document.addEventListener('click', (e) => {
   const menu = document.getElementById('more-menu');
   const wrap = document.getElementById('more-wrap');

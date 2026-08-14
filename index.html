@@ -658,6 +658,7 @@
     <span class="tb-sep"></span>
     <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
+    <button id="btn-mcp" class="tb-action" style="color:var(--accent);border-color:rgba(0,255,135,.3)">🤖 MCP</button>
     <div style="position:relative" id="more-wrap">
       <button id="btn-more" class="tb-action">⋯ 더보기 ▾</button>
       <div id="more-menu" style="display:none;position:absolute;top:40px;right:0;z-index:90;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:8px;min-width:190px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.4)"></div>
@@ -941,6 +942,22 @@
 
 <!-- ============ JavaScript ============ -->
 
+  <!-- MCP 지시 패널 -->
+  <div id="mcp-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:78;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="color:var(--accent);font-size:14px">🤖 MCP 지시 <span id="mcp-status" style="font-size:11px;color:var(--panel-text-faint)"></span></h4>
+      <button id="mcp-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="tb-action mcp-quick" data-cmd="펜딩 작업 확인해줘" style="flex:1;padding:5px 6px;font-size:11px">📥 펜딩</button>
+      <button class="tb-action mcp-quick" data-cmd="등록된 워크플로우 목록 보여줘" style="flex:1;padding:5px 6px;font-size:11px">📋 목록</button>
+      <button class="tb-action mcp-quick" data-cmd="너는 누구야?" style="flex:1;padding:5px 6px;font-size:11px">👤 신원</button>
+    </div>
+    <textarea id="mcp-input" rows="3" placeholder="MCP(Claude)에게 지시할 내용..." style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+    <button id="mcp-send" class="tb-action" style="width:100%;margin-top:8px;background:var(--accent);color:#04100a;font-weight:700">📡 지시 보내기</button>
+    <div style="margin-top:10px;font-size:11px;color:var(--panel-text-faint)">최근 지시/결과</div>
+    <div id="mcp-log" style="font-size:11px;color:var(--panel-text);margin-top:4px"></div>
+  </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <h4 style="color:var(--accent);margin-bottom:12px">✨ AI 워크플로우 생성</h4>
@@ -4552,6 +4569,16 @@ function buildMoreMenu() {
   }).join('');
   // 메뉴 항목 클릭 → 원본 버튼 트리거
   // 연결 기록 항목 추가
+  // MCP 지시 항목
+  const mcpItem = document.createElement('button');
+  mcpItem.className = 'mm-item';
+  mcpItem.textContent = '🤖 MCP 지시';
+  mcpItem.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:var(--accent);font-size:13px;cursor:pointer';
+  mcpItem.addEventListener('click', () => {
+    menu.style.display = 'none';
+    toggleMcpPanel();
+  });
+  menu.appendChild(mcpItem);
   const edgeItem = document.createElement('button');
   edgeItem.className = 'mm-item';
   edgeItem.textContent = '🔗 연결 기록';
@@ -4749,6 +4776,47 @@ function promptAgentCommand(agentId) {
   if (text) sendAgentCommand(agentId, text);
 }
 
+// === MCP 지시 패널 ===
+const MCP_AGENT = 'ag_connector';  // MCP 커넥터 (Claude 세션)
+function mcpLog(msg) {
+  const el = document.getElementById('mcp-log');
+  if (!el) return;
+  const t = new Date().toLocaleTimeString();
+  el.innerHTML = '<div style="padding:4px 0;border-bottom:1px solid var(--panel-border);color:var(--panel-text-faint)">' + t + '</div><div style="padding:4px 0">' + escapeHtml(msg) + '</div>' + el.innerHTML;
+}
+function toggleMcpPanel() {
+  const panel = document.getElementById('mcp-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') refreshMCPStatus();
+}
+async function refreshMCPStatus() {
+  const el = document.getElementById('mcp-status');
+  if (!el) return;
+  try {
+    const r = await fetch(API_BASE + '/api/agents/status');
+    const j = await r.json();
+    const on = (j.online || []).includes(MCP_AGENT);
+    el.innerHTML = on ? '<span style="color:var(--accent)">● 온라인</span>' : '<span style="color:var(--red)">○ 오프라인</span>';
+  } catch (e) { el.innerHTML = '<span style="color:var(--red)">○ 오프라인</span>'; }
+}
+async function sendMcpCommand(text) {
+  if (!text.trim()) return;
+  mcpLog('📤 지시: ' + text);
+  const traceId = 'mcp_' + Date.now().toString(36);
+  try {
+    const r = await fetch(API_BASE + '/api/agent/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_agent: MCP_AGENT, msg_type: 'command', from_agent: 'web', payload: { text }, trace_id: traceId })
+    });
+    const j = await r.json();
+    if (j.success) {
+      mcpLog('✅ 전송됨' + (j.pushed ? ' (온라인 즉시 전달)' : ' (대기열 — Claude가 확인 시 수신)'));
+      toast('📡 MCP 지시 전송됨');
+    } else mcpLog('❌ 실패: ' + (j.error || '오류'));
+  } catch (e) { mcpLog('❌ 전송 오류: ' + e.message); }
+}
+
 // === 자격증명 모달 (Claude 세션 구현) ===
 
   let currentCredAgentId = null;
@@ -4866,6 +4934,7 @@ setTimeout(initPresence, 800);
 document.getElementById('btn-diff').addEventListener('click', showWfDiff);
 document.getElementById('btn-risk').addEventListener('click', showRiskDiff);
 document.getElementById('btn-feedback').addEventListener('click', openFeedback);
+document.getElementById('btn-mcp').addEventListener('click', () => { toggleMcpPanel(); });
 document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
 document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';
@@ -4908,6 +4977,25 @@ document.getElementById('btn-sim').addEventListener('click', simulateWorkflow);
 document.getElementById('btn-gov').addEventListener('click', () => {
   document.getElementById('gov-panel').style.display = 'block';
   renderGovernance();
+});
+// MCP 지시 패널 이벤트
+document.getElementById('mcp-close').addEventListener('click', () => {
+  document.getElementById('mcp-panel').style.display = 'none';
+});
+document.getElementById('mcp-send').addEventListener('click', () => {
+  const input = document.getElementById('mcp-input');
+  sendMcpCommand(input.value);
+  input.value = '';
+});
+document.getElementById('mcp-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.ctrlKey) {
+    const input = document.getElementById('mcp-input');
+    sendMcpCommand(input.value);
+    input.value = '';
+  }
+});
+document.querySelectorAll('.mcp-quick').forEach(btn => {
+  btn.addEventListener('click', () => sendMcpCommand(btn.dataset.cmd));
 });
 document.getElementById('edgelog-close').addEventListener('click', () => {
   document.getElementById('edge-log-panel').style.display = 'none';

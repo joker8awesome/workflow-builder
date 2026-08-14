@@ -143,11 +143,12 @@
     color:var(--panel-text-dim);
     transition:background .15s ease, color .15s ease;
     min-height:36px;
-  }
+  ;margin-bottom:4px}
   #wf-list li .wf-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   #wf-list li:hover{background:var(--dark-3);color:var(--panel-text)}
   #wf-list li.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
-  #wf-list .wf-del{border:none;background:none;font-size:16px;color:var(--panel-text-faint);cursor:pointer;padding-inline:var(--space-1)}
+  #wf-list .wf-del{border:none;background:none;font-size:16px;color:var(--panel-text-faint);cursor:pointer;padding:6px 8px;margin:-4px 0;border-radius:6px;min-width:28px;text-align:center}
+  #wf-list .wf-del:hover{color:var(--danger);background:rgba(255,93,93,.1)}
   #wf-list .wf-del:hover{color:var(--danger)}
   #add-wf{
     margin:var(--space-2) var(--space-3);
@@ -162,7 +163,7 @@
 
   /* 노드 — 라이트 표면 (다크 캔버스 대비 아님, 라이트 캔버스 위) */
   #canvas .node{
-    position:absolute;min-width:160px;padding:10px 14px;
+    position:absolute;min-width:180px;padding:10px 14px;
     background:linear-gradient(180deg, var(--dark-3) 0%, var(--node-bg) 30%);
     border:1px solid var(--node-border);
     border-radius:var(--radius-md);
@@ -204,7 +205,7 @@
   }
   #canvas .node .nlabel{
     font-size:14px;font-weight:700;color:#f1f3f5;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    white-space:normal;overflow:hidden;text-overflow:ellipsis;word-break:keep-all;line-height:1.3;max-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
     text-wrap:balance;
   }
   #canvas .node .nindex{
@@ -272,6 +273,7 @@
 
 @layer utilities {
   #topbar .tb-action{flex-shrink:0}
+  #topbar .tb-sep{width:1px;height:22px;background:var(--dark-border);margin:0 4px;flex-shrink:0}
   #topbar button{
     padding:5px 11px;
     background:transparent;
@@ -622,15 +624,18 @@
     <span id="save-status" style="font-size:12px;color:#888"></span>
     <span id="sync-status" style="font-size:12px;color:#888"></span>
     <input id="wf-search" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:150px">
+    <span class="tb-sep"></span>
     <button id="btn-run" class="tb-action" style="background:var(--accent);color:#04100a;font-weight:700">▶ 실행</button>
     <button id="btn-ai" class="tb-action">✨ AI</button>
+    <span class="tb-sep"></span>
     <button id="btn-agents" class="tb-action">팀</button>
     <button id="btn-share" class="tb-action">공유</button>
     <button id="btn-export" class="tb-action">내보내기</button>
+    <span class="tb-sep"></span>
     <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
     <div style="position:relative" id="more-wrap">
-      <button id="btn-more" class="tb-action">⋯ 더보기</button>
+      <button id="btn-more" class="tb-action">⋯ 더보기 ▾</button>
       <div id="more-menu" style="display:none;position:absolute;top:40px;right:0;z-index:90;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:8px;min-width:190px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.4)"></div>
     </div>
     <!-- 숨김 원본 버튼 — 더보기 메뉴에서 click() 트리거용 (이벤트 바인딩 유지) -->
@@ -4155,6 +4160,13 @@ function onboardingTour() {
       if (obDone) obDone.addEventListener('click', close);
       if (obX) obX.addEventListener('click', close);
     }, 1500);
+    // 첫 상호작용(클릭) 시 온보딩 카드 자동 제거 — 방해 방지
+    const obAutoClose = () => {
+      const card = document.getElementById('onboard-card');
+      if (card) { localStorage.setItem(LS_KEY + '_onboarded', '1'); card.remove(); }
+      document.removeEventListener('click', obAutoClose, true);
+    };
+    document.addEventListener('click', obAutoClose, true);
   } catch (e) {}
 }
 

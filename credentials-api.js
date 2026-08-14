@@ -64,7 +64,7 @@ module.exports = function createCredentialsRouter(db) {
 
       // 감사 로그
       await db.query(
-        `INSERT INTO audit_logs (actor, action, resource, timestamp)
+        `INSERT INTO audit_logs (actor, action, resource, created_at)
          VALUES ($1, 'credential.issue', $2, now())`,
         [
           agent_id,
@@ -127,7 +127,7 @@ module.exports = function createCredentialsRouter(db) {
         return res.status(404).json({ error: 'credential_not_found' });
       }
       await db.query(
-        `INSERT INTO audit_logs (actor, action, resource, timestamp)
+        `INSERT INTO audit_logs (actor, action, resource, created_at)
          VALUES ($1, 'credential.revoke', $2, now())`,
         [agent_id, JSON.stringify({ credential_id: credId })]
       ).catch(() => {});

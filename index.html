@@ -91,6 +91,8 @@
   }
   #canvas-wrap,#canvas{touch-action:none}
   #canvas .node{touch-action:none}
+  #edges{width:100%;height:100%;position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+  #edges path, #edges text{pointer-events:auto}
   #canvas .node .nport{touch-action:none}
   #topbar{
     height:var(--topbar-h);
@@ -858,7 +860,7 @@
       </div>
     </aside>
     <main id="canvas-wrap">
-      <svg id="edges"><defs><marker id="arrow" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="#00ff87"/></marker><marker id="arrow-dim" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="#7d8fa1"/></marker></defs></svg>
+      <svg id="edges" width="100%" height="100%" style="position:absolute;left:0;top:0;overflow:visible;pointer-events:none"><defs><marker id="arrow" markerWidth="20" markerHeight="14" refX="17" refY="7" orient="auto"><polygon points="0 0, 20 7, 0 14" fill="#00ff87" stroke="#0a0d10" stroke-width="1"/></marker><marker id="arrow-dim" markerWidth="20" markerHeight="14" refX="17" refY="7" orient="auto"><polygon points="0 0, 20 7, 0 14" fill="#00ff87" opacity="0.85"/></marker></defs></svg>
       <div id="canvas"></div>
     </main>
     <aside id="inspector">
@@ -1372,13 +1374,13 @@ function renderEdges() {
     const to = nodeMap.get(e.to);
     if (!from || !to) { console.warn('orphan edge', e.id); return; }
     const x1 = from.x + 180, y1 = from.y + 26;
-    const x2 = to.x + 180, y2 = to.y + 26;
+    const x2 = to.x, y2 = to.y + 26;  // 목표 노드 왼쪽 끝으로 (노드 관통 방지)
     const isActive = runState && (runState.currentId === e.from || runState.currentId === e.to);
     // 베지어 곡선 엣지
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', edgePath(x1, y1, x2, y2));
-    path.setAttribute('stroke', isActive ? '#00ff87' : '#7d8fa1');
-    path.setAttribute('stroke-width', isActive ? '3.5' : '2.5');
+    path.setAttribute('stroke', isActive ? '#00ff87' : '#9fb3c8');
+    path.setAttribute('stroke-width', isActive ? '3.5' : '3');
     path.setAttribute('fill', 'none');
     path.setAttribute('marker-end', isActive ? 'url(#arrow)' : 'url(#arrow-dim)');
     path.dataset.id = e.id;
@@ -3703,7 +3705,7 @@ function renderHandoffs() {
     const aTo = getAgent(to.agentId);
     if (aFrom && aTo && aFrom.id !== aTo.id && !e.label) {
       // 엣지 중간에 핸드오프 아이콘 (SVG text)
-      const x1 = from.x + 90, y1 = from.y + 26, x2 = to.x + 90, y2 = to.y + 26;
+      const x1 = from.x + 180, y1 = from.y + 26, x2 = to.x, y2 = to.y + 26;
       const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       t.setAttribute('x', (x1 + x2) / 2); t.setAttribute('y', (y1 + y2) / 2 + 10);
       t.setAttribute('text-anchor', 'middle'); t.setAttribute('font-size', '10');

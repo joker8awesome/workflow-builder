@@ -815,6 +815,10 @@
         <button class="tpl-btn" data-tpl="approval">승인 프로세스</button>
         <button class="tpl-btn" data-tpl="content">콘텐츠 제작</button>
         <button class="tpl-btn" data-tpl="pipeline">데이터 파이프라인</button>
+        <div style="margin-top:10px;border-top:1px solid var(--panel-border);padding-top:8px">
+          <strong style="font-size:12px;color:var(--accent)">📦 내장 예시</strong>
+          <div id="example-list" style="margin-top:6px;display:flex;flex-direction:column;gap:6px"></div>
+        </div>
       </div>
     </aside>
     <main id="canvas-wrap">
@@ -1964,6 +1968,7 @@ document.getElementById('wf-name').addEventListener('input', (e) => {
 
 document.getElementById('btn-align').addEventListener('click', autoAlign);
 document.getElementById('btn-template').addEventListener('click', () => {
+  loadExamples();
   const p = document.getElementById('template-panel');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
 });
@@ -4310,6 +4315,41 @@ async function feedbackLoop(wf, summary, status) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wf_id: wf.id, summary: String(summary).slice(0, 200), status }),
     });
+  } catch (e) {}
+}
+
+// 예시 워크플로우 설치 — 서버에서 3종 로드
+async function installExample(id) {
+  if (!serverOnline) { toast('서버 미연결 — 예시 설치 불가'); return; }
+  try {
+    const r = await fetch(API_BASE + '/api/examples/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const j = await r.json();
+    if (j.success) {
+      const wf = j.workflow;
+      if (!store.workflows.find(w => w.id === wf.id)) {
+        store.workflows.push({ id: wf.id, name: wf.name, nodes: wf.nodes.map(n => ({...n})), edges: wf.edges.map(e => ({...e})) });
+      }
+      store.activeWorkflowId = wf.id;
+      saveStore(true); renderAll();
+      toast('✅ 예시 설치됨: ' + wf.name);
+    } else toast(j.error || '설치 실패');
+  } catch (e) { toast('설치 실패'); }
+}
+async function loadExamples() {
+  const wrap = document.getElementById('example-list');
+  if (!wrap) return;
+  try {
+    const r = await fetch(API_BASE + '/api/examples');
+    const j = await r.json();
+    if (!j.success) return;
+    wrap.innerHTML = j.examples.map(ex =>
+      '<button style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;font-size:11px;color:var(--panel-text);cursor:pointer" onclick="installExample(\'' + ex.id + '\')">' +
+      '<span>' + escapeHtml(ex.name) + '</span>' +
+      '<span style="color:var(--accent)">설치 →</span></button>'
+    ).join('');
   } catch (e) {}
 }
 

@@ -887,6 +887,78 @@ app.post('/api/workflows/:id/run', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 헬스체크 API ===
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, status: 'ok', uptime: process.uptime(), ts: new Date().toISOString() });
+});
+
+// === 예시 워크플로우 — 내장 템플릿 3종 ===
+const EXAMPLE_WFS = [
+  {
+    id: 'ex_content', name: '콘텐츠 제작 (아이디어→배포)',
+    nodes: [
+      { id: 'e1', type: 'start', x: 40, y: 180, label: '시작', desc: '', assignee: '', due: '', tags: [] },
+      { id: 'e2', type: 'process', x: 220, y: 180, label: '아이디어 수집', desc: '주제/키워드 정리', assignee: '', due: '', tags: ['기획'] },
+      { id: 'e3', type: 'process', x: 400, y: 180, label: '초안 작성', desc: 'LLM으로 초안 생성', assignee: '', due: '', tags: ['작성'] },
+      { id: 'e4', type: 'reviewer', x: 580, y: 180, label: '검수', desc: '품질/오류 검증', assignee: '', due: '', tags: ['검토'] },
+      { id: 'e5', type: 'decision', x: 760, y: 180, label: '승인 여부', desc: '검수 통과?', assignee: '', due: '', tags: [], llm_prompt: '이 초안이 배포 가능한 품질인가?' },
+      { id: 'e6', type: 'process', x: 940, y: 180, label: '배포', desc: '게시/전송', assignee: '', due: '', tags: ['배포'] },
+      { id: 'e7', type: 'end', x: 1120, y: 180, label: '종료', desc: '', assignee: '', due: '', tags: [] },
+    ],
+    edges: [
+      { id: 'x1', from: 'e1', to: 'e2', label: '' }, { id: 'x2', from: 'e2', to: 'e3', label: '' },
+      { id: 'x3', from: 'e3', to: 'e4', label: '' }, { id: 'x4', from: 'e4', to: 'e5', label: '' },
+      { id: 'x5', from: 'e5', to: 'e6', label: 'Yes' }, { id: 'x6', from: 'e5', to: 'e3', label: 'No' },
+      { id: 'x7', from: 'e6', to: 'e7', label: '' },
+    ],
+  },
+  {
+    id: 'ex_data', name: '데이터 처리 (CSV→가공→저장)',
+    nodes: [
+      { id: 'd1', type: 'start', x: 40, y: 150, label: '시작', desc: '', assignee: '', due: '', tags: [] },
+      { id: 'd2', type: 'connector', x: 220, y: 150, label: 'CSV 입력', desc: '데이터 수집', assignee: '', due: '', tags: [], connector_type: 'csv', connector_config: { text: '이름,점수\n홍길동,95\n김철수,88' } },
+      { id: 'd3', type: 'process', x: 400, y: 150, label: '가공', desc: '정제/변환', assignee: '', due: '', tags: [] },
+      { id: 'd4', type: 'decision', x: 580, y: 150, label: '품질 확인', desc: '데이터 유효?', assignee: '', due: '', tags: [], condition: 'score > 0' },
+      { id: 'd5', type: 'process', x: 760, y: 150, label: 'DB 저장', desc: '결과 저장', assignee: '', due: '', tags: [] },
+      { id: 'd6', type: 'end', x: 940, y: 150, label: '종료', desc: '', assignee: '', due: '', tags: [] },
+    ],
+    edges: [
+      { id: 'y1', from: 'd1', to: 'd2', label: '' }, { id: 'y2', from: 'd2', to: 'd3', label: '' },
+      { id: 'y3', from: 'd3', to: 'd4', label: '' }, { id: 'y4', from: 'd4', to: 'd5', label: 'Yes' },
+      { id: 'y5', from: 'd4', to: 'd3', label: 'No' }, { id: 'y6', from: 'd5', to: 'd6', label: '' },
+    ],
+  },
+  {
+    id: 'ex_approval', name: '승인 프로세스 (요청→승인→처리)',
+    nodes: [
+      { id: 'a1', type: 'start', x: 40, y: 150, label: '시작', desc: '', assignee: '', due: '', tags: [] },
+      { id: 'a2', type: 'process', x: 220, y: 150, label: '요청 접수', desc: '요청 등록', assignee: '', due: '', tags: [] },
+      { id: 'a3', type: 'approval', x: 400, y: 150, label: '승인 게이트', desc: '관리자 확인', assignee: '', due: '', tags: [] },
+      { id: 'a4', type: 'process', x: 580, y: 150, label: '처리', desc: '요청 이행', assignee: '', due: '', tags: [] },
+      { id: 'a5', type: 'end', x: 760, y: 150, label: '종료', desc: '', assignee: '', due: '', tags: [] },
+    ],
+    edges: [
+      { id: 'z1', from: 'a1', to: 'a2', label: '' }, { id: 'z2', from: 'a2', to: 'a3', label: '' },
+      { id: 'z3', from: 'a3', to: 'a4', label: 'Yes' }, { id: 'z4', from: 'a3', to: 'a2', label: 'No' },
+      { id: 'z5', from: 'a4', to: 'a5', label: '' },
+    ],
+  },
+];
+app.get('/api/examples', (req, res) => res.json({ success: true, examples: EXAMPLE_WFS }));
+app.post('/api/examples/install', async (req, res) => {
+  try {
+    const { id } = req.body || {};
+    const ex = EXAMPLE_WFS.find(w => w.id === id);
+    if (!ex) return res.status(404).json({ success: false, error: '없음' });
+    await pool.query(
+      `INSERT INTO wf_workflows (id, name, data) VALUES ($1,$2,$3)
+       ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, data=EXCLUDED.data, updated_at=now()`,
+      [ex.id, ex.name, JSON.stringify({ nodes: ex.nodes, edges: ex.edges })]
+    );
+    res.json({ success: true, workflow: ex });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === 데이터 커넥터 API — CSV/JSON/API/DB 입력 ===
 app.post('/api/connector', async (req, res) => {
   try {

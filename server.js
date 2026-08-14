@@ -78,7 +78,7 @@ try {
 const PORT = process.env.PORT || 3737;
 
 // CORS — 배포 시 특정 출처 제한, 로컬은 전체 허용
-const ALLOWED_ORIGINS = (process.env.WF_ALLOWED_ORIGINS || '*').split(',').map(s => s.trim());
+const ALLOWED_ORIGINS = (process.env.WF_ALLOWED_ORIGINS || 'https://joker8awesome.github.io,http://localhost:3737,http://localhost:3000').split(',').map(s => s.trim());
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (ALLOWED_ORIGINS.includes('*') || (origin && ALLOWED_ORIGINS.includes(origin))) {

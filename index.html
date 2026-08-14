@@ -817,6 +817,130 @@
     </div>
     <div id="edge-log-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
+<!--
+  자격증명 발급 UI - 팀 패널에 붙일 스니펫
+  index.html의 팀/에이전트 패널 근처에 이 HTML+CSS+JS를 추가.
+  스타일은 최소한만 인라인으로 넣었으니 기존 디자인 시스템에 맞게 조정.
+
+  사용:
+    openCredentialModal('ag_1')   // 에이전트 ID로 모달 열기
+-->
+
+<!-- ============ HTML: 모달 마크업 ============ -->
+<div id="credentialModal" class="cred-modal" hidden>
+  <div class="cred-modal__backdrop" onclick="closeCredentialModal()"></div>
+  <div class="cred-modal__panel" role="dialog" aria-labelledby="credModalTitle">
+    <header class="cred-modal__header">
+      <h2 id="credModalTitle">🔑 자격증명 발급</h2>
+      <button type="button" class="cred-modal__close" onclick="closeCredentialModal()">✕</button>
+    </header>
+
+    <!-- 발급 폼 -->
+    <section id="credForm" class="cred-modal__body">
+      <p class="cred-hint">에이전트 <code id="credAgentId">-</code> 에 대한 새 API 키를 발급합니다.</p>
+
+      <label class="cred-field">
+        <span>이름 (구분용)</span>
+        <input type="text" id="credName" placeholder="예: claude-desktop-macbook" value="claude-desktop" />
+      </label>
+
+      <fieldset class="cred-field">
+        <legend>스코프</legend>
+        <label><input type="checkbox" id="scopeRead" checked /> mcp:read (조회)</label>
+        <label><input type="checkbox" id="scopeExecute" checked /> mcp:execute (보고/실행)</label>
+      </fieldset>
+
+      <label class="cred-field">
+        <span>만료 (일, 비워두면 무기한)</span>
+        <input type="number" id="credExpires" placeholder="예: 90" min="1" max="3650" />
+      </label>
+
+      <div class="cred-modal__actions">
+        <button type="button" class="btn-secondary" onclick="closeCredentialModal()">취소</button>
+        <button type="button" class="btn-primary" onclick="issueCredential()">발급</button>
+      </div>
+    </section>
+
+    <!-- 발급 후 1회 표시 -->
+    <section id="credResult" class="cred-modal__body" hidden>
+      <div class="cred-warning">
+        ⚠️ 이 키는 <strong>지금 이 화면에서만</strong> 볼 수 있습니다.
+        다른 세션에 옮긴 뒤 창을 닫으세요.
+      </div>
+
+      <label class="cred-field">
+        <span>API 키</span>
+        <div class="cred-key-row">
+          <input type="text" id="credKeyDisplay" readonly />
+          <button type="button" onclick="copyCredKey()">복사</button>
+        </div>
+      </label>
+
+      <details class="cred-config">
+        <summary>Claude Desktop 설정 예시</summary>
+        <pre id="credConfigPreview"></pre>
+        <button type="button" onclick="copyCredConfig()">설정 전체 복사</button>
+      </details>
+
+      <div class="cred-modal__actions">
+        <button type="button" class="btn-primary" onclick="closeCredentialModal()">확인 (창 닫기)</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ============ CSS ============ -->
+<style>
+  .cred-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+  .cred-modal[hidden] { display: none; }
+  .cred-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+  .cred-modal__panel {
+    position: relative; background: #1a1a1a; color: #eee;
+    border: 1px solid #333; border-radius: 12px;
+    width: min(560px, 92vw); max-height: 90vh; overflow: auto;
+    padding: 0;
+  }
+  .cred-modal__header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid #2a2a2a;
+  }
+  .cred-modal__header h2 { margin: 0; font-size: 18px; font-weight: 500; }
+  .cred-modal__close { background: none; border: 0; color: #888; font-size: 20px; cursor: pointer; }
+  .cred-modal__body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .cred-hint { color: #aaa; margin: 0; font-size: 13px; }
+  .cred-hint code { background: #222; padding: 2px 6px; border-radius: 4px; }
+  .cred-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .cred-field > span, .cred-field > legend { color: #ccc; }
+  .cred-field input[type="text"], .cred-field input[type="number"] {
+    background: #0f0f0f; border: 1px solid #333; color: #eee;
+    padding: 8px 10px; border-radius: 6px; font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+  .cred-field label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .cred-modal__actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 8px; }
+  .btn-primary, .btn-secondary {
+    padding: 8px 16px; border-radius: 6px; border: 1px solid #333;
+    cursor: pointer; font-size: 13px;
+  }
+  .btn-primary { background: #00ff87; color: #000; border-color: #00ff87; font-weight: 500; }
+  .btn-secondary { background: transparent; color: #ccc; }
+  .cred-warning {
+    background: #3a2a00; border: 1px solid #664400; color: #ffd58a;
+    padding: 12px; border-radius: 8px; font-size: 13px;
+  }
+  .cred-key-row { display: flex; gap: 8px; }
+  .cred-key-row input {
+    flex: 1; background: #0f0f0f; border: 1px solid #333; color: #00ff87;
+    padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .cred-key-row button { padding: 0 14px; background: #222; color: #eee; border: 1px solid #333; border-radius: 6px; cursor: pointer; }
+  .cred-config { background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px 12px; }
+  .cred-config summary { cursor: pointer; color: #aaa; font-size: 13px; }
+  .cred-config pre { margin: 10px 0; padding: 10px; background: #000; border-radius: 4px; overflow-x: auto; font-size: 11px; color: #ddd; }
+</style>
+
+<!-- ============ JavaScript ============ -->
+
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <h4 style="color:var(--accent);margin-bottom:12px">✨ AI 워크플로우 생성</h4>
@@ -1462,7 +1586,7 @@ function renderInspector() {
       <label>이름</label><input id="f-label" value="${escapeHtml(n.label)}">
       <label>설명</label><textarea id="f-desc">${escapeHtml(n.desc)}</textarea>
       <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
-      ${n.agentId ? `<button id="cred-issue" class="tb-action" style="width:100%;margin-top:6px">🔑 자격증명 발급 (한 번만 표시)</button>
+      ${n.agentId ? `<button id="cred-issue" class="tb-action" style="width:100%;margin-top:6px">🔑 자격증명 발급</button>
       <button id="cmd-send" class="tb-action" style="width:100%;margin-top:6px">📡 에이전트에게 명령 보내기</button>` : ''}
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
@@ -1544,25 +1668,13 @@ function renderInspector() {
     }
     // 자격증명 발급 버튼 — 한 번만 표시되는 토큰
     const credBtn = document.getElementById('cred-issue');
-    if (credBtn) credBtn.addEventListener('click', async () => {
+    if (credBtn) credBtn.addEventListener('click', () => {
       if (!selected || selected.type !== 'node') return;
       const wf = currentWorkflow();
       const n = wf.nodes.find(x => x.id === selected.id);
       const agentId = n && n.agentId;
       if (!agentId) { toast('먼저 담당 에이전트를 선택하세요'); return; }
-      const r = await fetch(API_BASE + '/api/credentials', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_id: agentId })
-      }).catch(() => null);
-      const j = r && r.ok ? await r.json() : null;
-      if (j && j.success) {
-        // 한 번만 표시 — localStorage에 발급 완료 기록
-        const shown = JSON.parse(localStorage.getItem(LS_KEY + '_cred_shown') || '[]');
-        if (shown.includes(agentId)) { toast('이미 발급된 키는 다시 볼 수 없습니다'); return; }
-        shown.push(agentId);
-        localStorage.setItem(LS_KEY + '_cred_shown', JSON.stringify(shown));
-        toast('🔑 키 발급됨 (한 번만 표시): ' + j.api_key, 8000);
-      } else toast(j ? j.error : '발급 실패 (서버 필요)');
+      openCredentialModal(agentId);
     });
     const cmdBtn = document.getElementById('cmd-send');
     if (cmdBtn) cmdBtn.addEventListener('click', () => {
@@ -4618,6 +4730,97 @@ function promptAgentCommand(agentId) {
   const text = prompt('[' + agentId + '] 보낼 명령:');
   if (text) sendAgentCommand(agentId, text);
 }
+
+// === 자격증명 모달 (Claude 세션 구현) ===
+
+  let currentCredAgentId = null;
+
+  function openCredentialModal(agentId) {
+    currentCredAgentId = agentId;
+    document.getElementById('credAgentId').textContent = agentId;
+    document.getElementById('credForm').hidden = false;
+    document.getElementById('credResult').hidden = true;
+    document.getElementById('credName').value = 'claude-desktop';
+    document.getElementById('credExpires').value = '';
+    document.getElementById('scopeRead').checked = true;
+    document.getElementById('scopeExecute').checked = true;
+    document.getElementById('credentialModal').hidden = false;
+  }
+
+  function closeCredentialModal() {
+    document.getElementById('credentialModal').hidden = true;
+    // 화면에서 키 텍스트 제거
+    document.getElementById('credKeyDisplay').value = '';
+    document.getElementById('credConfigPreview').textContent = '';
+    currentCredAgentId = null;
+  }
+
+  async function issueCredential() {
+    const scopes = [];
+    if (document.getElementById('scopeRead').checked) scopes.push('mcp:read');
+    if (document.getElementById('scopeExecute').checked) scopes.push('mcp:execute');
+    if (!scopes.length) { alert('최소 1개 스코프 선택 필요'); return; }
+
+    const body = {
+      name: document.getElementById('credName').value.trim() || 'default',
+      scopes,
+    };
+    const days = parseInt(document.getElementById('credExpires').value, 10);
+    if (days > 0) body.expires_in_days = days;
+
+    try {
+      const res = await fetch(`/api/agents/${currentCredAgentId}/credentials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert('발급 실패: ' + (err.error || res.statusText));
+        return;
+      }
+      const data = await res.json();
+      showIssuedKey(data.key);
+    } catch (e) {
+      alert('네트워크 오류: ' + e.message);
+    }
+  }
+
+  function showIssuedKey(key) {
+    document.getElementById('credForm').hidden = true;
+    document.getElementById('credResult').hidden = false;
+    document.getElementById('credKeyDisplay').value = key;
+
+    const host = window.location.host;
+    const proto = window.location.protocol;
+    const mcpUrl = `${proto}//${host}/mcp`;
+    const config = {
+      mcpServers: {
+        'workflow-builder': {
+          url: mcpUrl,
+          headers: { Authorization: `Bearer ${key}` },
+        },
+      },
+    };
+    document.getElementById('credConfigPreview').textContent = JSON.stringify(config, null, 2);
+  }
+
+  async function copyCredKey() {
+    const key = document.getElementById('credKeyDisplay').value;
+    await navigator.clipboard.writeText(key);
+    // 간단한 피드백 - 필요시 토스트로 교체
+    const btn = event.target;
+    const orig = btn.textContent;
+    btn.textContent = '복사됨 ✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }
+
+  async function copyCredConfig() {
+    const cfg = document.getElementById('credConfigPreview').textContent;
+    await navigator.clipboard.writeText(cfg);
+    event.target.textContent = '설정 복사됨 ✓';
+    setTimeout(() => { event.target.textContent = '설정 전체 복사'; }, 1500);
+  }
 
 // === 초기화 ===
 loadStore();

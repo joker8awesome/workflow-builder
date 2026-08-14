@@ -26,6 +26,7 @@ async function authenticate(req, res, next) {
     }
     req.agent_id = rows[0].agent_id;
     req.scopes = rows[0].scopes || [];
+    pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(() => {});
     next();
   } catch (e) {
     res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'internal error' }, id: null });
@@ -180,7 +181,12 @@ router.post('/mcp', authenticate, async (req, res) => {
         return res.json({ jsonrpc: '2.0', id: body.id, error: { code: -32002, message: 'insufficient_scope', data: { required: scope, provided: req.scopes } } });
       }
       const result = await callTool(name, args, { agent_id: req.agent_id, scopes: req.scopes });
-      return res.json({ jsonrpc: '2.0', id: body.id, result });
+      let textContent = result;
+      try {
+        const parsed = result.content && result.content[0] && result.content[0].text;
+        if (parsed) textContent = JSON.parse(parsed);
+      } catch (e) {}
+      return res.json({ jsonrpc: '2.0', id: body.id, result: { content: result.content || [{ type: 'text', text: JSON.stringify(result, null, 2) }], structuredContent: textContent } });
     } catch (e) {
       const code = e.code || -32603;
       return res.json({ jsonrpc: '2.0', id: body.id, error: { code, message: e.message || 'internal error' } });

@@ -52,12 +52,6 @@ async function callLLMWithFallback(messages, opts) {
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-// MCP 라우터 마운트 (외부 AI 세션 채널)
-try {
-  const mcpRouter = require('./mcp-router');
-  app.use('/', mcpRouter);
-  console.log('[mcp] 라우터 마운트됨: POST /mcp, GET /.well-known/mcp-server-card');
-} catch (e) { console.warn('[mcp] 라우터 로드 실패:', e.message); }
 
 // 폴백 로그 API
 app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallbackLog }));
@@ -68,6 +62,18 @@ const pool = new Pool({
   database: 'odds',
   user: 'hermes',
 });
+// 자격증명 API 마운트 (Claude 세션 구현 — prefix/GET/DELETE/감사)
+try {
+  const createCredentialsRouter = require('./credentials-api');
+  app.use('/', createCredentialsRouter(pool));
+  console.log('[cred] credentials-api 마운트됨');
+} catch (e) { console.warn('[cred] credentials-api 로드 실패:', e.message); }
+// MCP 라우터 마운트 (외부 AI 세션 채널)
+try {
+  const mcpRouter = require('./mcp-router');
+  app.use('/', mcpRouter);
+  console.log('[mcp] 라우터 마운트됨: POST /mcp, GET /.well-known/mcp-server-card');
+} catch (e) { console.warn('[mcp] 라우터 로드 실패:', e.message); }
 
 const PORT = process.env.PORT || 3737;
 
@@ -267,44 +273,6 @@ app.post('/api/agent/report', async (req, res) => {
     }
     // 웹 UI에 이벤트 브로드캐스트 — 실시간 반영
     broadcastWf(trace_id, { agent_report: true, status: status || 'completed', summary: summary || '' });
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
-
-// === MCP 키 발급 API — wf_ak_ 형식 + SHA-256 hash 저장 (원문 미저장) ===
-app.post('/api/agents/:id/credentials', requireAuth, async (req, res) => {
-  try {
-    const agentId = req.params.id;
-    const raw = 'wf_ak_' + agentId + '_' + require('crypto').randomBytes(20).toString('base64url');
-    const hash = require('crypto').createHash('sha256').update(raw).digest('hex');
-    const scopes = JSON.stringify(req.body.scopes || ['mcp:read', 'mcp:execute']);
-    const expires = new Date(Date.now() + 90 * 24 * 3600 * 1000);  // 90일
-    await pool.query(
-      `INSERT INTO agent_credentials (agent_id, api_key, key_hash, scopes, encrypted, expires_at)
-       VALUES ($1,$2,$3,$4,true,$5)
-       ON CONFLICT (agent_id) DO UPDATE SET key_hash=EXCLUDED.key_hash, scopes=EXCLUDED.scopes, revoked_at=NULL, expires_at=EXCLUDED.expires_at`,
-      [agentId, hash.slice(0, 64), hash, scopes, expires]
-    );
-    res.json({ success: true, api_key: raw, expires_at: expires.toISOString() });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
-// 키 회전 — 기존 키 무효화 + 새 키 발급
-app.post('/api/agents/:id/credentials/rotate', requireAuth, async (req, res) => {
-  try {
-    const raw = 'wf_ak_' + req.params.id + '_' + require('crypto').randomBytes(20).toString('base64url');
-    const hash = require('crypto').createHash('sha256').update(raw).digest('hex');
-    const expires = new Date(Date.now() + 90 * 24 * 3600 * 1000);
-    await pool.query(
-      `UPDATE agent_credentials SET key_hash=$1, api_key=$1, revoked_at=NULL, expires_at=$2, created_at=now() WHERE agent_id=$3`,
-      [hash, expires, req.params.id]
-    );
-    res.json({ success: true, api_key: raw, expires_at: expires.toISOString() });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
-// 키 폐기 — revoked_at 설정
-app.post('/api/agents/:id/credentials/revoke', requireAuth, async (req, res) => {
-  try {
-    await pool.query(`UPDATE agent_credentials SET revoked_at = now() WHERE agent_id = $1`, [req.params.id]);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });

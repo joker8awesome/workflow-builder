@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>워크플로우 빌더 — 사용자 매뉴얼</title>
+<style>
+  :root{
+    --bg:#0a0d10; --panel:#12161b; --panel2:#1a2026; --border:#2a333c;
+    --text:#e8eaed; --dim:#9aa7b5; --faint:#6b7885;
+    --accent:#00ff87; --accent-dim:#00d46f;
+    --blue:#1f6feb; --yellow:#d29922; --red:#ff5d5d; --purple:#8957e5; --teal:#0d9488;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;line-height:1.7;padding-bottom:60px}
+  .wrap{max-width:860px;margin:0 auto;padding:0 20px}
+  header{background:linear-gradient(135deg,#0d1a14,#0a0d10 60%);border-bottom:1px solid var(--border);padding:40px 0 32px;margin-bottom:36px}
+  header .wrap{display:flex;align-items:center;gap:14px}
+  .logo{width:48px;height:48px;border-radius:12px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:22px;color:#04100a;font-weight:800;flex-shrink:0}
+  h1{font-size:26px;font-weight:800}
+  .sub{color:var(--dim);font-size:14px;margin-top:2px}
+  .badge{display:inline-block;background:rgba(0,255,135,.12);color:var(--accent);border:1px solid rgba(0,255,135,.3);border-radius:20px;padding:2px 12px;font-size:12px;margin-left:10px;vertical-align:middle}
+  nav{position:sticky;top:0;background:rgba(10,13,16,.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);z-index:10;padding:10px 0}
+  nav .wrap{display:flex;gap:6px;flex-wrap:wrap}
+  nav a{color:var(--dim);text-decoration:none;font-size:13px;padding:6px 12px;border-radius:8px;transition:all .2s}
+  nav a:hover{background:var(--panel2);color:var(--accent)}
+  h2{font-size:21px;font-weight:800;margin:44px 0 16px;padding-bottom:10px;border-bottom:2px solid var(--accent);color:var(--accent)}
+  h3{font-size:17px;font-weight:700;margin:28px 0 10px;color:var(--text)}
+  p{color:var(--dim);margin-bottom:10px}
+  strong{color:var(--text)}
+  .step{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin:14px 0}
+  .step-num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#04100a;font-weight:800;font-size:14px;margin-right:10px}
+  .step h4{display:inline;font-size:15px}
+  .step p{margin:10px 0 0;font-size:14px}
+  .step .tip{margin-top:10px;background:rgba(0,255,135,.07);border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 8px 8px 0;font-size:13px;color:var(--dim)}
+  code{background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:13px;color:var(--accent);font-family:ui-monospace,'D2Coding',Consolas,monospace}
+  .kbd{background:var(--panel2);border:1px solid var(--border);border-bottom-width:3px;border-radius:6px;padding:2px 8px;font-size:12px;color:var(--text);font-family:ui-monospace,Consolas,monospace}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th{background:var(--panel2);color:var(--accent);text-align:left;padding:10px 12px;border:1px solid var(--border)}
+  td{padding:10px 12px;border:1px solid var(--border);color:var(--dim)}
+  tr:hover td{background:var(--panel)}
+  .node-tag{display:inline-block;padding:3px 10px;border-radius:8px;font-size:12px;font-weight:700;color:#fff;margin-right:6px}
+  .warning{background:rgba(255,93,93,.08);border:1px solid rgba(255,93,93,.3);border-radius:12px;padding:14px 18px;margin:14px 0;font-size:14px;color:var(--dim)}
+  .faq{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin:10px 0}
+  .faq h4{color:var(--accent);font-size:15px;margin-bottom:6px}
+  .faq p{font-size:14px;margin:0}
+  footer{margin-top:60px;padding:24px 0;border-top:1px solid var(--border);color:var(--faint);font-size:13px;text-align:center}
+  @media(max-width:600px){ h1{font-size:20px} .logo{width:40px;height:40px;font-size:18px} }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="logo">WF</div>
+    <div>
+      <h1>워크플로우 빌더 사용자 매뉴얼 <span class="badge">초보자용</span></h1>
+      <div class="sub">AI 에이전트 협업 워크플로우를 쉽게 만들어 보세요</div>
+    </div>
+  </div>
+</header>
+
+<nav>
+  <div class="wrap">
+    <a href="#start">🚀 시작하기</a>
+    <a href="#first">✨ 첫 워크플로우</a>
+    <a href="#nodes">📦 노드 9종</a>
+    <a href="#connect">🔗 연결하기</a>
+    <a href="#run">▶ 실행하기</a>
+    <a href="#agent">🤖 에이전트</a>
+    <a href="#share">📤 공유/저장</a>
+    <a href="#faq">❓ 자주 묻는 질문</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+<!-- 1. 시작하기 -->
+<section id="start">
+  <h2>1. 시작하기</h2>
+  <p>워크플로우 빌더는 <strong>브라우저에서 바로 사용</strong>할 수 있는 도구입니다. 설치할 필요가 없어요.</p>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>주소 입력</h4>
+    <p>브라우저 주소창에 아래 주소를 입력하고 Enter를 누르세요.<br><br>
+    <code>https://joker8awesome.github.io/workflow-builder/</code></p>
+    <div class="tip">💡 크롬(Chrome) 브라우저를 권장합니다. 폰트와 기능이 가장 잘 동작해요.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>첫 화면 확인</h4>
+    <p>화면이 열리면 왼쪽에 <strong>워크플로우 목록</strong>, 가운데 큰 <strong>캔버스</strong>(작업 공간), 오른쪽에 <strong>속성</strong> 패널이 보입니다.</p>
+    <div class="tip">💡 처음이라 아무것도 없어도 괜찮아요. 아래에서 차근차근 따라 하면 됩니다.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>화면 구성 알아보기</h4>
+    <table>
+      <tr><th>영역</th><th>역할</th></tr>
+      <tr><td>⬅️ 왼쪽 사이드바</td><td>워크플로우 목록, 새로 만들기, 검색</td></tr>
+      <tr><td>🎯 가운데 캔버스</td><td>블록(노드)을 배치하고 연결하는 작업 공간</td></tr>
+      <tr><td>➡️ 오른쪽 속성</td><td>선택한 블록의 이름, 설명, 담당자 등을 편집</td></tr>
+      <tr><td>⬆️ 상단 메뉴</td><td>실행, AI, 팀, 공유, 내보내기 등 주요 기능</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 2. 첫 워크플로우 -->
+<section id="first">
+  <h2>2. 첫 워크플로우 만들기</h2>
+  <p>가장 쉬운 방법은 <strong>내장 예시</strong>를 설치하는 것입니다. 예시를 고쳐서 내 것으로 만들면 금방 익숙해져요.</p>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>예시 워크플로우 설치</h4>
+    <p>왼쪽 사이드바에서 <strong>템플릿</strong>을 클릭 → <strong>📦 내장 예시</strong>에서 원하는 것을 선택 → <strong>설치 →</strong> 클릭</p>
+    <table>
+      <tr><th>예시</th><th>무엇을 하나요?</th></tr>
+      <tr><td><span class="node-tag" style="background:var(--blue)">콘텐츠 제작</span></td><td>아이디어 → 초안 → 검수 → 승인 → 배포 (7단계)</td></tr>
+      <tr><td><span class="node-tag" style="background:var(--teal)">데이터 처리</span></td><td>CSV 입력 → 가공 → 품질 확인 → DB 저장 (6단계)</td></tr>
+      <tr><td><span class="node-tag" style="background:var(--yellow)">승인 프로세스</span></td><td>요청 → 승인 게이트 → 처리 (5단계)</td></tr>
+    </table>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>빈 화면에서 직접 만들기</h4>
+    <p>위쪽 <strong>＋ 새 워크플로우</strong> 버튼 클릭 → 이름 입력 → <strong>캔버스에서 우클릭</strong> → 노드 추가</p>
+    <div class="tip">💡 우클릭하면 메뉴가 나와요. 시작 → 프로세스 → 종료 순서로 3개만 만들어도 실행할 수 있는 워크플로우가 완성됩니다.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>이름 바꾸기</h4>
+    <p>오른쪽 속성 패널에서 <strong>워크플로우 이름</strong>을 클릭 → 원하는 이름 입력 → 자동 저장됩니다.</p>
+    <div class="tip">💡 모든 변경은 자동 저장됩니다. 저장 버튼을 누를 필요가 없어요!</div>
+  </div>
+</section>
+
+<!-- 3. 노드 9종 -->
+<section id="nodes">
+  <h2>3. 노드(블록) 9종</h2>
+  <p>노드는 워크플로우의 <strong>한 단계</strong>입니다. 각자 다른 역할을 해요.</p>
+  <table>
+    <tr><th>노드</th><th>색상</th><th>역할</th><th>언제 쓰나요?</th></tr>
+    <tr><td><span class="node-tag" style="background:#2ea043">시작</span></td><td>초록</td><td>워크플로우의 출발점</td><td>모든 워크플로우의 첫 번째</td></tr>
+    <tr><td><span class="node-tag" style="background:#1f6feb">프로세스</span></td><td>파랑</td><td>일반 작업 (스크립트, 메시지 등)</td><td>데이터 정리, 메시지 전송 등</td></tr>
+    <tr><td><span class="node-tag" style="background:#d29922">판단</span></td><td>주황</td><td>Yes/No로 분기</td><td>"완료됐나요?" 같은 질문</td></tr>
+    <tr><td><span class="node-tag" style="background:#b45f06">승인</span></td><td>갈색</td><td>사람 확인 대기</td><td>중요한 단계 전 승인 받기</td></tr>
+    <tr><td><span class="node-tag" style="background:#8957e5">감독</span></td><td>보라</td><td>여러 작업을 나눠 병렬 실행</td><td>동시에 여러 일 처리</td></tr>
+    <tr><td><span class="node-tag" style="background:#0d9488">검토</span></td><td>청록</td><td>결과 확인/검증</td><td>오류 없는지 점검</td></tr>
+    <tr><td><span class="node-tag" style="background:#f78166">연결</span></td><td>주황</td><td>CSV/JSON/API/DB에서 데이터 가져오기</td><td>외부 데이터 입력</td></tr>
+    <tr><td><span class="node-tag" style="background:#e26dd4">투표</span></td><td>핑크</td><td>여러 에이전트 다수결</td><td>여럿이 결정할 때</td></tr>
+    <tr><td><span class="node-tag" style="background:#d1242f">종료</span></td><td>빨강</td><td>워크플로우의 끝</td><td>마지막에 배치</td></tr>
+  </table>
+  <div class="warning">⚠️ 노드에 마우스를 올리면 예상 시간/역할 설명이 나와요. 어떤 노드인지 헷갈릴 때 활용하세요.</div>
+</section>
+
+<!-- 4. 연결하기 -->
+<section id="connect">
+  <h2>4. 노드 연결하기</h2>
+  <p>노드와 노드를 <strong>선으로 연결</strong>하면 순서가 생깁니다. "시작 → 프로세스 → 종료"처럼 흐름을 만들어요.</p>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>연결 핸들 찾기</h4>
+    <p>노드 오른쪽 가장자리에 작은 <strong>원(핸들)</strong>이 있어요. 이 원을 드래그하면 선이 그려집니다.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>선 긋기</h4>
+    <p><strong>노드 오른쪽 핸들 → 누른 채 → 다음 노드로 드래그 → 놓기</strong></p>
+    <div class="tip">💡 선이 가까운 노드에 자석처럼 붙어요. 놓을 때 초록색으로 강조되면 연결 성공!</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>분기 만들기 (판단 노드)</h4>
+    <p><strong>판단</strong> 노드에서 연결하면 자동으로 <strong>Yes</strong> / <strong>No</strong> 두 개의 선이 만들어집니다.</p>
+    <p>예: "승인 여부" 판단 → Yes면 배포로, No면 초안 작성으로</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4</span><h4>노드 이동/삭제</h4>
+    <p><strong>이동</strong>: 노드를 누른 채 끌어서 원하는 위치에 놓기<br>
+    <strong>삭제</strong>: 노드 클릭 → <span class="kbd">Delete</span> 키 누르기<br>
+    <strong>복사</strong>: 노드 클릭 → <span class="kbd">Ctrl</span>+<span class="kbd">D</span></p>
+  </div>
+</section>
+
+<!-- 5. 실행하기 -->
+<section id="run">
+  <h2>5. 실행하기</h2>
+  <p>만든 워크플로우를 실제로 돌려보세요. 실행하면서 어디서 멈추는지, 무슨 일이 일어나는지 눈으로 볼 수 있어요.</p>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>실행</h4>
+    <p>상단 메뉴의 초록색 <strong>▶ 실행</strong> 버튼 클릭</p>
+    <p>노드가 순서대로 강조되며 실행되고, 하단에 현재 상태가 표시됩니다.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>시뮬레이션 (안전하게 미리보기)</h4>
+    <p>상단 메뉴 <strong>⋯ 더보기</strong> → <strong>시뮬레이션</strong> 클릭</p>
+    <p>실제로 실행하지 않고 <strong>예상 경로·시간·비용</strong>을 보여줍니다. 위험 없이 미리 확인할 수 있어요.</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>실행 결과 보기</h4>
+    <p><strong>⋯ 더보기 → 트레이스</strong>: 각 단계가 얼마나 걸렸는지 타임라인으로 표시<br>
+    <strong>통계</strong>: 실행 횟수, 성공률, 병목 확인</p>
+  </div>
+
+  <div class="warning">⚠️ GitHub Pages(웹 버전)에서는 시뮬레이션 실행만 가능합니다. 실제 에이전트/DB 연동은 로컬 서버에서 동작해요.</div>
+</section>
+
+<!-- 6. 에이전트 -->
+<section id="agent">
+  <h2>6. AI 에이전트 등록하기</h2>
+  <p>에이전트는 워크플로우의 <strong>담당자</strong>입니다. 각 노드에 "누가 이 일을 하는지" 지정하면 협업이 가능해져요.</p>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>팀 탭 열기</h4>
+    <p>상단 메뉴에서 <strong>팀</strong> 클릭 → <strong>＋ 에이전트 등록</strong> 클릭</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>에이전트 정보 입력</h4>
+    <p>이름, 담당자, 역할, 머신스펙(예: 8vCPU/16GB), 구축환경(예: Docker), 워크스페이스 경로를 입력하고 저장</p>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>노드에 에이전트 배정</h4>
+    <p>캔버스에서 노드 클릭 → 오른쪽 속성의 <strong>담당 에이전트</strong>에서 선택</p>
+    <p>노드에 에이전트 이름 배지가 표시됩니다. 누가 무슨 일을 하는지 한눈에 보여요.</p>
+    <div class="tip">💡 배정 안 된 노드는 점선으로 표시돼요. 빠뜨린 담당을 찾기 쉬워요.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4</span><h4>에이전트 대시보드</h4>
+    <p><strong>⋯ 더보기 → 대시보드</strong>: 에이전트별 담당 노드 수, 완료/진행 상태 확인<br>
+    <strong>⋯ 더보기 → 거버넌스</strong>: 신뢰 점수, 자율성 레벨 확인</p>
+  </div>
+</section>
+
+<!-- 7. 공유/저장 -->
+<section id="share">
+  <h2>7. 공유 & 저장</h2>
+
+  <div class="step">
+    <span class="step-num">1</span><h4>자동 저장</h4>
+    <p>모든 변경은 <strong>자동으로 저장</strong>됩니다. 위쪽에 "로컬 저장" 표시가 보이면 정상이에요.</p>
+    <div class="tip">💡 웹 버전은 이 브라우저에 저장됩니다. 다른 브라우저에서는 목록이 비어 보일 수 있어요.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">2</span><h4>내보내기 / 가져오기</h4>
+    <p><strong>내보내기</strong>: 상단 메뉴 → 워크플로우를 JSON 파일로 저장<br>
+    <strong>가져오기</strong>: 상단 메뉴 → 저장한 JSON 파일을 다시 불러오기</p>
+    <div class="tip">💡 다른 사람에게 워크플로우를 보낼 때는 JSON 파일이 가장 확실해요.</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">3</span><h4>공유 링크</h4>
+    <p>상단 메뉴 <strong>공유</strong> 클릭 → 링크가 복사됩니다. 링크를 받은 사람은 읽기 전용으로 볼 수 있어요.</p>
+    <div class="warning">⚠️ 공유 링크는 서버가 켜져 있을 때만 동작합니다 (로컬 서버 전용).</div>
+  </div>
+
+  <div class="step">
+    <span class="step-num">4</span><h4>단축키 모음</h4>
+    <table>
+      <tr><th>단축키</th><th>기능</th></tr>
+      <tr><td><span class="kbd">Ctrl</span>+<span class="kbd">Z</span></td><td>실행 취소 (되돌리기)</td></tr>
+      <tr><td><span class="kbd">Ctrl</span>+<span class="kbd">Shift</span>+<span class="kbd">Z</span></td><td>다시 실행</td></tr>
+      <tr><td><span class="kbd">Ctrl</span>+<span class="kbd">D</span></td><td>노드 복제</td></tr>
+      <tr><td><span class="kbd">Ctrl</span>+<span class="kbd">K</span></td><td>명령 팔레트 (모든 기능 검색)</td></tr>
+      <tr><td><span class="kbd">Delete</span></td><td>선택한 노드 삭제</td></tr>
+      <tr><td><span class="kbd">?</span></td><td>단축키 도움말</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- 8. FAQ -->
+<section id="faq">
+  <h2>8. 자주 묻는 질문</h2>
+
+  <div class="faq">
+    <h4>Q. 워크플로우가 사라졌어요!</h4>
+    <p>웹 버전은 브라우저 로컬 저장소를 사용합니다. 같은 브라우저에서 접속하면 다시 나타나요. 다른 브라우저/시크릿 모드에서는 보이지 않습니다.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. 노드가 안 움직여요</h4>
+    <p>노드 위에 <strong>툴팁(설명 박스)</strong>이 떠 있으면 잠시 헷갈릴 수 있어요. 마우스를 옆으로 이동하면 사라집니다. 노드 몸통을 눌러서 드래그해 보세요.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. 실행 버튼을 눌렀는데 아무 일도 안 일어나요</h4>
+    <p>시작 노드가 있는지, 시작 → 다음 노드로 선이 연결됐는지 확인하세요. 빈 워크플로우나 연결이 끊긴 워크플로우는 실행할 게 없어요.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. AI 판단 노드가 뭐예요?</h4>
+    <p>판단 노드에 <strong>LLM 판단</strong>을 설정하면, AI가 질문(예: "이 초안이 배포 가능한가?")에 Yes/No로 답해 분기합니다. 조건식 대신 AI 판단을 쓸 수 있어요.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. 승인 노드에서 멈췄어요</h4>
+    <p>승인 노드는 <strong>사람이 직접 승인</strong>해야 진행됩니다. 화면에 승인 창이 뜨면 확인/반려를 선택하세요. 일정 시간(5분)이 지나면 자동으로 반려 처리됩니다.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. 모바일에서도 되나요?</h4>
+    <p>네! 휴대폰에서도 사용할 수 있습니다. 하단에 실행/AI/통계 등 버튼이 나타나고, 터치로 노드를 움직일 수 있어요.</p>
+  </div>
+
+  <div class="faq">
+    <h4>Q. 의견을 보내고 싶어요</h4>
+    <p>상단 메뉴의 <strong>의견</strong> 버튼을 눌러 자유롭게 적어주세요. 개발자에게 전달됩니다.</p>
+  </div>
+</section>
+
+<footer>
+  워크플로우 빌더 사용자 매뉴얼 · 버전 1.0 · 2026-08-14
+</footer>
+
+</div>
+</body>
+</html>

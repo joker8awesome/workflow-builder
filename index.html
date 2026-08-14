@@ -593,6 +593,8 @@
 
   /* 엣지 연결 상태 */
   #edges path.edge-flash, #edges line.edge-flash{stroke:var(--accent) !important;stroke-width:5px !important;filter:drop-shadow(0 0 6px var(--accent-glow));transition:stroke .3s}
+  #edges path.edge-flash[marker-end]{animation:arrowPulse .8s ease 2}
+  @keyframes arrowPulse{0%,100%{filter:drop-shadow(0 0 2px var(--accent))}50%{filter:drop-shadow(0 0 10px var(--accent))}}
   #canvas .node .edge-ok{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--accent);background:rgba(0,255,135,.12);border:1px solid rgba(0,255,135,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
   #canvas .node .edge-warn{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--yellow);background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
 
@@ -856,7 +858,7 @@
       </div>
     </aside>
     <main id="canvas-wrap">
-      <svg id="edges"><defs><marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#8a8f98"/></marker></defs></svg>
+      <svg id="edges"><defs><marker id="arrow" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="#00ff87"/></marker><marker id="arrow-dim" markerWidth="14" markerHeight="10" refX="12" refY="5" orient="auto"><polygon points="0 0, 14 5, 0 10" fill="#7d8fa1"/></marker></defs></svg>
       <div id="canvas"></div>
     </main>
     <aside id="inspector">
@@ -1378,6 +1380,7 @@ function renderEdges() {
     path.setAttribute('stroke', isActive ? '#00ff87' : '#7d8fa1');
     path.setAttribute('stroke-width', isActive ? '3.5' : '2.5');
     path.setAttribute('fill', 'none');
+    path.setAttribute('marker-end', isActive ? 'url(#arrow)' : 'url(#arrow-dim)');
     path.dataset.id = e.id;
     path.style.cursor = 'pointer';
     path.addEventListener('click', (ev) => { ev.stopPropagation(); selected = { type: 'edge', id: e.id }; renderAll(); });
@@ -1875,6 +1878,7 @@ function renderTempEdge() {
     te.id = 'temp-edge';
     te.setAttribute('stroke', '#00ff87'); te.setAttribute('stroke-width', '2');
     te.setAttribute('stroke-dasharray', '6,4');
+    te.setAttribute('marker-end', 'url(#arrow)');
     document.getElementById('edges').appendChild(te);
   }
   te.setAttribute('x1', tempEdge.x1); te.setAttribute('y1', tempEdge.y1);

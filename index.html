@@ -93,6 +93,9 @@
   #canvas .node{touch-action:none}
   #edges{width:100%;height:100%;position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
   #edges path, #edges text{pointer-events:auto}
+  #zoom-controls{position:fixed;right:16px;bottom:16px;z-index:85;display:flex;align-items:center;gap:4px;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:6px}
+  #zoom-controls button{width:32px;height:32px;font-size:16px;border-radius:8px}
+  #zoom-level{min-width:44px;text-align:center;font-size:12px;font-weight:700;color:var(--accent)}
   #canvas .node .nport{touch-action:none}
   #topbar{
     height:var(--topbar-h);
@@ -466,9 +469,10 @@
 
   /* 토스트 */
   #toast-container{
-    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
-    z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center;
+    position:fixed;top:14px;right:14px;
+    z-index:100;display:flex;flex-direction:column;gap:8px;align-items:flex-end;pointer-events:none;
   }
+  #toast-container .toast{pointer-events:auto}
   .toast{
     background:var(--dark-2);border:1px solid var(--dark-border);
     color:var(--panel-text);border-radius:var(--radius-md);
@@ -596,6 +600,8 @@
   /* 엣지 연결 상태 */
   #edges path.edge-flash, #edges line.edge-flash{stroke:var(--accent) !important;stroke-width:5px !important;filter:drop-shadow(0 0 6px var(--accent-glow));transition:stroke .3s}
   #edges path.edge-flash[marker-end]{animation:arrowPulse .8s ease 2}
+  #edges path.edge-flow{stroke-dasharray:10 8;animation:edgeFlow .6s linear infinite}
+  @keyframes edgeFlow{to{stroke-dashoffset:-18}}
   @keyframes arrowPulse{0%,100%{filter:drop-shadow(0 0 2px var(--accent))}50%{filter:drop-shadow(0 0 10px var(--accent))}}
   #canvas .node .edge-ok{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--accent);background:rgba(0,255,135,.12);border:1px solid rgba(0,255,135,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
   #canvas .node .edge-warn{position:absolute;bottom:-9px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--yellow);background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.3);border-radius:10px;padding:1px 6px;white-space:nowrap;z-index:6}
@@ -1798,11 +1804,13 @@ function renderEdges() {
     const x1 = from.x + 180, y1 = from.y + 26;
     const x2 = to.x, y2 = to.y + 26;  // 목표 노드 왼쪽 끝으로 (노드 관통 방지)
     const isActive = runState && (runState.currentId === e.from || runState.currentId === e.to);
+    const isFlow = runState && runState.running && (runState.currentId === e.from);
     // 베지어 곡선 엣지
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', edgePath(x1, y1, x2, y2));
     path.setAttribute('stroke', isActive ? '#00ff87' : '#9fb3c8');
     path.setAttribute('stroke-width', isActive ? '3.5' : '3');
+    if (isFlow) path.classList.add('edge-flow');
     path.setAttribute('fill', 'none');
     path.setAttribute('marker-end', isActive ? 'url(#arrow)' : 'url(#arrow-dim)');
     path.dataset.id = e.id;
@@ -1898,6 +1906,9 @@ function renderInspector() {
       <label>설정 (CSV/JSON 텍스트, API URL, 또는 SQL)</label>
       <textarea id="f-conn-config" rows="3" placeholder="데이터 또는 URL 또는 SELECT ..." style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px">${escapeHtml((n.connector_config && (n.connector_config.text || n.connector_config.url || n.connector_config.query)) || '')}</textarea>
       ` : ''}
+      <details id="insp-advanced" style="margin-top:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;padding:8px">
+        <summary style="font-size:12px;color:var(--accent);cursor:pointer">⚙️ 고급 설정</summary>
+        <div style="margin-top:6px">
       <label>실행 액션 (스크립트/telegram/http)</label><input id="f-action" value="${escapeHtml(n.action || '')}" placeholder="예: echo hello 또는 telegram">
       ${n.type === 'decision' ? '<label>LLM 판단 프롬프트</label><textarea id="f-llm">' + escapeHtml(n.llm_prompt || '') + '</textarea><label>모델 라우팅</label><select id="f-model" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px"><option value="">자동</option><option value="cheap"' + (n.model === 'cheap' ? ' selected' : '') + '>저비용</option><option value="smart"' + (n.model === 'smart' ? ' selected' : '') + '>고성능</option></select>' +
         '<label>자율성 스펙트럼</label><select id="f-auto" style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:13px">' +
@@ -1930,6 +1941,8 @@ function renderInspector() {
       <label>댓글</label><textarea id="f-comment" placeholder="댓글 입력..."></textarea>
       <button id="f-add-comment" style="margin-top:4px">댓글 추가</button>
       <div id="f-comment-list" style="font-size:11px;color:var(--panel-text-dim)"></div>
+        </div>
+      </details>
       <button id="f-del-node">노드 삭제</button>`;
     ['label','desc','assignee','due'].forEach(k => {
       document.getElementById('f-' + k).addEventListener('input', (e) => { n[k] = e.target.value; saveStore(); });

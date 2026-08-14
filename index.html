@@ -618,6 +618,12 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 
   /* 작업 상태 배지 */
+  .node-status-pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px;border:1px solid;user-select:none}
+  .node-status-pill.s-waiting{color:#9aa7b5;border-color:#5a6470;background:rgba(90,100,112,.15)}
+  .node-status-pill.s-working{color:#4da3ff;border-color:#4da3ff;background:rgba(77,163,255,.12)}
+  .node-status-pill.s-review{color:#ffc24d;border-color:#ffc24d;background:rgba(255,194,77,.12)}
+  .node-status-pill.s-done{color:#00ff87;border-color:#00ff87;background:rgba(0,255,135,.12)}
+  .node-status-pill.s-blocked{color:#ff5d5d;border-color:#ff5d5d;background:rgba(255,93,93,.12)}
   .status-badge{
     position:absolute;bottom:-9px;right:10px;
     font-size:9px;font-weight:600;
@@ -1375,6 +1381,7 @@ function renderCanvas() {
       ${pipelineStatusBadge(n)}
       ${agentHandoffInfo(n)}
       ${blockerBadge(n)}
+      ${statusPill(n)}
       ${edgeStatusBadge(n, wf)}
       ${n.agentId ? agentLiveBadge(n.agentId) : ''}
       <span class="nport" data-port="out"></span>
@@ -1405,6 +1412,7 @@ function renderCanvas() {
     });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (e.target.closest('.node-status-pill')) { cycleNodeStatus(n); return; }
       if (e.shiftKey) { toggleMulti(n.id); }
       else if (multiSelect.size > 0) { clearMulti(); selectNode(n.id); }
       else { selectNode(n.id); }
@@ -1673,6 +1681,12 @@ function renderInspector() {
     const fCond2 = document.getElementById('f-cond2');
     if (fCond2) fCond2.addEventListener('input', (e) => { n.condition = e.target.value; saveStore(); });
     document.getElementById('f-retry').addEventListener('input', (e) => { n.retry = Math.max(0, Math.min(5, +e.target.value || 0)); saveStore(); });
+    // 상태 드롭다운 이벤트 (Inspector)
+    const fStatus = document.getElementById('f-status');
+    if (fStatus) fStatus.addEventListener('change', (e) => {
+      n.status = e.target.value;
+      saveStore(); renderCanvas();
+    });
     const fConnType = document.getElementById('f-conn-type');
     if (fConnType) {
       fConnType.addEventListener('change', (e) => { n.connector_type = e.target.value; saveStore(); });
@@ -2653,6 +2667,22 @@ document.getElementById('canvas-wrap').addEventListener('wheel', () => setTimeou
 // ── 1. 실행 엔진 실전화 ──
 let execState = { running: false, startTime: 0, results: {} };
 // 노드별 실행 상태 배지 (running/completed/failed)
+// 노드 상태 컨트롤 — 상태 사이클 (배지 클릭)
+const STATUS_CYCLE = ['대기', '진행', '검토', '완료', '블로커'];
+const STATUS_CLASS = { '대기': 'waiting', '진행': 'working', '검토': 'review', '완료': 'done', '블로커': 'blocked' };
+function cycleNodeStatus(n) {
+  const idx = STATUS_CYCLE.indexOf(n.status);
+  if (idx === -1) n.status = '진행';
+  else n.status = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+  saveStore(); renderCanvas(); renderInspector();
+  toast('상태: ' + n.status);
+}
+function statusPill(n) {
+  if (!n || n.type === 'start' || n.type === 'end') return '';
+  const s = n.status || '대기';
+  const cls = STATUS_CLASS[s] || 'waiting';
+  return '<span class="node-status-pill s-' + cls + '" data-status="1" title="상태 변경 (클릭)">' + s + '</span>';
+}
 function setExecStatus(nodeId, status) {
   const el = document.querySelector(`#canvas .node[data-id="${nodeId}"]`);
   if (!el) return;
@@ -3800,6 +3830,41 @@ function autonomyGaugeHTML(agentId) {
     (lv >= 1 ? '●' : '○') + (lv >= 2 ? '●' : '○') + (lv >= 3 ? '●' : '○') + '</span>';
 }
 // 에이전트 패널 렌더
+// 에이전트 노드 배치 — 시작→종료 사이에 process 노드 삽입
+function placeAgentNode(agentId) {
+  const wf = currentWorkflow();
+  if (!wf) return;
+  const ag = getAgent(agentId);
+  if (!ag) return;
+  const id = 'n_' + Date.now().toString(36);
+  // 시작 노드 찾기, 없으면 왼쪽 끝 노드 뒤에
+  const start = wf.nodes.find(n => n.type === 'start');
+  const end = wf.nodes.find(n => n.type === 'end');
+  const baseX = start ? start.x : 80;
+  const baseY = start ? start.y : 200;
+  // 같은 y의 노드들 중 가장 오른쪽
+  const sameRow = wf.nodes.filter(n => Math.abs(n.y - baseY) < 40);
+  const maxX = sameRow.length ? Math.max(...sameRow.map(n => n.x)) : baseX;
+  const node = {
+    id, type: 'process', x: maxX + 220, y: baseY,
+    label: ag.name, desc: ag.role || '', assignee: ag.person || '',
+    due: '', tags: [], agentId, status: '대기', color: ag.color
+  };
+  wf.nodes.push(node);
+  // 시작→종료 직접 엣지가 있으면 재연결: 시작→새노드→종료
+  if (start && end) {
+    const direct = wf.edges.find(e => e.from === start.id && e.to === end.id);
+    if (direct) {
+      direct.to = node.id;
+      wf.edges.push({ id: 'e_' + Date.now().toString(36), from: node.id, to: end.id, label: '' });
+    }
+  }
+  pushHistory();
+  saveStore(); renderAll();
+  selected = { type: 'node', id };
+  renderInspector();
+  toast('✅ 에이전트 배치: ' + ag.name);
+}
 function renderAgents() {
   const list = document.getElementById('agents-list');
   if (!list) return;
@@ -3815,16 +3880,18 @@ function renderAgents() {
         '<strong>' + escapeHtml(a.name) + '</strong><span style="color:var(--panel-text-faint);font-size:11px">' + escapeHtml(a.person || '') + '</span></div>' +
         '<div style="font-size:11px;color:var(--panel-text-dim);margin-top:4px">역할: ' + escapeHtml(a.role || '-') + ' · 담당 노드' + warn + '</div>' +
         '<div style="font-size:10px;color:var(--panel-text-faint);margin-top:2px">' + escapeHtml((a.machine || {}).spec || '') + ' · ' + escapeHtml((a.machine || {}).env || '') + ' · ' + escapeHtml((a.machine || {}).workspace || '') + '</div>' +
-        '<div style="display:flex;gap:6px;margin-top:6px"><button class="tb-action ag-edit" style="padding:3px 8px;font-size:11px">수정</button>' +
+        '<div style="display:flex;gap:6px;margin-top:6px"><button class="tb-action ag-place" style="padding:3px 8px;font-size:11px;color:var(--accent);border-color:rgba(0,255,135,.3)">⬆ 배치</button>' +
+        '<button class="tb-action ag-edit" style="padding:3px 8px;font-size:11px">수정</button>' +
         '<button class="tb-action ag-del" style="padding:3px 8px;font-size:11px;color:#ff5d5d">삭제</button></div></div>';
     }).join('');
   // 이벤트
   list.querySelectorAll('.agent-item').forEach(el => {
     el.addEventListener('click', (e) => {
-      if (e.target.closest('.ag-edit') || e.target.closest('.ag-del')) return;
+      if (e.target.closest('.ag-edit') || e.target.closest('.ag-del') || e.target.closest('.ag-place')) return;
       selectedAgent = selectedAgent === el.dataset.id ? null : el.dataset.id;
       renderAgents(); renderCanvas();
     });
+    el.querySelector('.ag-place').addEventListener('click', (e) => { e.stopPropagation(); placeAgentNode(el.dataset.id); });
     el.querySelector('.ag-edit').addEventListener('click', (e) => { e.stopPropagation(); showAgentForm(getAgent(el.dataset.id)); });
     el.querySelector('.ag-del').addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -3847,7 +3914,7 @@ function toggleAgentsPanel() {
 // ═══ 에이전트 협업 고도화 모듈 ═══
 
 // 4. 작업 상태 단계 — 노드에 status 표시
-const WORK_STATUS = ['대기', '진행', '검토', '완료'];
+const WORK_STATUS = ['대기', '진행', '검토', '완료', '블로커'];
 function nodeStatusBadge(n) {
   const s = n.status || '대기';
   const color = s === '완료' ? 'var(--accent)' : s === '진행' ? '#d29922' : s === '검토' ? '#1f6feb' : 'var(--panel-text-faint)';

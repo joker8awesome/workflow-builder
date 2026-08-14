@@ -1029,6 +1029,7 @@
           <button class="tpl-btn" data-tpl="pipeline">📊 데이터 파이프라인</button>
           <button class="tpl-btn" data-tpl="research">🔎 에이전트 리서치</button>
           <button class="tpl-btn" data-tpl="review">📝 AI 콘텐츠 검토</button>
+          <button class="tpl-btn" data-tpl="team">🤝 팀 오케스트레이션</button>
         </div>
         <div style="margin-top:10px;border-top:1px solid var(--panel-border);padding-top:8px">
           <strong style="font-size:12px;color:var(--accent)">📦 내장 예시</strong>
@@ -2568,8 +2569,8 @@ document.getElementById('run-close').addEventListener('click', () => {
 document.querySelectorAll('.tpl-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tpl = btn.dataset.tpl;
-    if (tpl === 'research' || tpl === 'review') {
-      loadTplFromServer(tpl === 'research' ? 'wf_tpl_research' : 'wf_tpl_review');
+    if (tpl === 'research' || tpl === 'review' || tpl === 'team') {
+      loadTplFromServer(tpl === 'research' ? 'wf_tpl_research' : tpl === 'review' ? 'wf_tpl_review' : 'wf_tpl_team');
       return;
     }
     const wf = defaultWorkflow('템플릿: ' + (tpl === 'approval' ? '승인 프로세스' : tpl === 'content' ? '콘텐츠 제작' : '데이터 파이프라인'));

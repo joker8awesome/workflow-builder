@@ -332,13 +332,16 @@ agentWss.on('connection', (ws, req) => {
   const agentId = url.searchParams.get('agent_id') || '';
   const key = url.searchParams.get('key') || '';
   if (!agentId || !key) { ws.close(4001, 'agent_id/key required'); return; }
-  // 자격증명 검증
-  pool.query('SELECT api_key, encrypted FROM agent_credentials WHERE agent_id = $1', [agentId])
+  // 자격증명 검증 — SHA-256 key_hash 기반 (credentials-api 저장 방식)
+  const keyHash = require('crypto').createHash('sha256').update(key).digest('hex');
+  pool.query(
+    'SELECT agent_id FROM agent_credentials WHERE key_hash = $1 AND (revoked_at IS NULL) AND (expires_at IS NULL OR expires_at > now())',
+    [keyHash]
+  )
     .then(r => {
-      if (!r.rows.length) { ws.close(4003, 'unknown agent'); return; }
-      const stored = r.rows[0].encrypted ? decryptSecret(r.rows[0].api_key) : r.rows[0].api_key;
-      if (stored !== key) { ws.close(4003, 'invalid credential'); return; }
+      if (!r.rows.length || r.rows[0].agent_id !== agentId) { ws.close(4003, 'invalid credential'); return; }
       agentSockets.set(agentId, ws);
+      pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(() => {});
       ws.send(JSON.stringify({ type: 'connected', agent_id: agentId, ts: new Date().toISOString() }));
       console.log('[agent-ws] 연결됨:', agentId);
       broadcastAgentStatus();

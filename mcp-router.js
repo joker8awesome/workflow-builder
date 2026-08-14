@@ -7,6 +7,12 @@ const router = express.Router();
 
 // ------- 인증 미들웨어 -------
 async function authenticate(req, res, next) {
+  // 테스트용 인증 우회 — WF_MCP_OPEN=1 이면 Bearer 없이 통과 (Custom Connector OAuth 대응)
+  if (process.env.WF_MCP_OPEN === '1') {
+    req.agent_id = 'ag_connector';
+    req.scopes = ['mcp:read', 'mcp:execute', 'mcp:admin'];
+    return next();
+  }
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith('Bearer ')) {
     return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'invalid_credentials' }, id: null });

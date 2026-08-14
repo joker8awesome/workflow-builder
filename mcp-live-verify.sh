@@ -74,7 +74,7 @@ seed_result=$(psql "$PGURL" -tAc "
   VALUES ('wf_sup_test', 'result_live', '{\"task\":\"AI 뉴스 3개 요약\",\"keywords\":[\"AI\",\"2026\"]}'::jsonb)
   RETURNING node_id;
 ")
-RESULT_ID=$(echo "$seed_result" | tr -d ' ')
+RESULT_ID=$(echo "$seed_result" | head -1 | tr -d ' \t\r')
 info "wf_results.node_id: $RESULT_ID (payload_ref=$RESULT_ID)"
 
 psql "$PGURL" -c "
@@ -118,11 +118,11 @@ while true; do
   state=$(psql "$PGURL" -tAF'|' -c "
     SELECT
       COALESCE((SELECT status FROM agent_messages
-                WHERE trace_id='$TRACE_ID' AND type='command'), 'null'),
+                WHERE trace_id='$TRACE_ID' AND msg_type='command'), 'null'),
       (SELECT COUNT(*) FROM agent_messages
-       WHERE trace_id='$TRACE_ID' AND type='report')::int,
+       WHERE trace_id='$TRACE_ID' AND msg_type='report')::int,
       COALESCE((SELECT status FROM agent_checkpoints
-                WHERE trace_id='$TRACE_ID' LIMIT 1), 'null');
+                WHERE data->>'trace_id'='$TRACE_ID' LIMIT 1), 'null');
   " | tr -d ' ')
 
   if [ "$state" != "$last_state" ]; then
@@ -156,8 +156,8 @@ info "4단계: 최종 검증"
 echo
 echo "--- agent_messages ---"
 psql "$PGURL" -c "
-  SELECT type, from_agent, to_agent, payload_ref, status,
-         to_char(timestamp, 'HH24:MI:SS.MS') AS ts
+  SELECT msg_type, from_agent, to_agent, payload_ref, status,
+         to_char(created_at, 'HH24:MI:SS.MS') AS ts
   FROM agent_messages
   WHERE trace_id = '$TRACE_ID'
   ORDER BY id;
@@ -173,16 +173,16 @@ psql "$PGURL" -c "
 
 echo "--- agent_checkpoints ---"
 psql "$PGURL" -c "
-  SELECT agent_id, status, to_char(created_at, 'HH24:MI:SS.MS') AS created_at
+  SELECT data->>'agent_id' AS agent_id, status, to_char(created_at, 'HH24:MI:SS.MS') AS created_at
   FROM agent_checkpoints
-  WHERE trace_id = '$TRACE_ID';
+  WHERE data->>'trace_id' = '$TRACE_ID';
 "
 
 echo "--- audit_logs (이 세션) ---"
 psql "$PGURL" -c "
   SELECT action, COUNT(*)::int AS n,
-         MIN(to_char(timestamp, 'HH24:MI:SS')) AS first,
-         MAX(to_char(timestamp, 'HH24:MI:SS')) AS last
+         MIN(to_char(created_at, 'HH24:MI:SS')) AS first,
+         MAX(to_char(created_at, 'HH24:MI:SS')) AS last
   FROM audit_logs
   WHERE actor = '$AGENT_ID' AND timestamp >= to_timestamp($start_ts)
   GROUP BY action ORDER BY first;
@@ -210,9 +210,9 @@ verdict=$(psql "$PGURL" -tAc "
     THEN 'PASS' ELSE 'FAIL' END
   FROM (
     SELECT
-      (SELECT status FROM agent_messages WHERE trace_id='$TRACE_ID' AND type='command') AS cmd_status,
-      (SELECT COUNT(*) FROM agent_messages WHERE trace_id='$TRACE_ID' AND type='report')::int AS report_count,
-      (SELECT status FROM agent_checkpoints WHERE trace_id='$TRACE_ID' LIMIT 1) AS checkpoint,
+      (SELECT status FROM agent_messages WHERE trace_id='$TRACE_ID' AND msg_type='command') AS cmd_status,
+      (SELECT COUNT(*) FROM agent_messages WHERE trace_id='$TRACE_ID' AND msg_type='report')::int AS report_count,
+      (SELECT status FROM agent_checkpoints WHERE data->>'trace_id'='$TRACE_ID' LIMIT 1) AS checkpoint,
       COALESCE((SELECT duration_ms FROM agent_spans WHERE trace_id='$TRACE_ID' LIMIT 1), 0) AS span_duration
   ) v;
 " | tr -d ' ')
@@ -238,7 +238,7 @@ fi
 # report 중복 체크 (관찰 4.2)
 report_count=$(psql "$PGURL" -tAc "
   SELECT COUNT(*)::int FROM agent_messages
-  WHERE trace_id='$TRACE_ID' AND type='report'")
+  WHERE trace_id='$TRACE_ID' AND msg_type='report'")
 if [ "$report_count" -gt "1" ]; then
   echo
   warn "report 중복 감지 ($report_count건). 관찰 4.2 실전 발생 — 하드닝 필요."

@@ -2248,8 +2248,16 @@ function renderGroups() {
 
 // ── 1.2 베지어 곡선 엣지 ──
 function edgePath(x1, y1, x2, y2) {
-  const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
-  return `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`;
+  const hx = Math.abs(x2 - x1), hy = Math.abs(y2 - y1);
+  // 가로 배치(노드 좌우): x 방향으로 휨 / 세로 배치(노드 위아래): y 방향으로 휨
+  if (hx >= hy) {
+    const dx = Math.max(40, hx * 0.5);
+    return `M ${x1} ${y1} C ${x1+dx} ${y1}, ${x2-dx} ${y2}, ${x2} ${y2}`;
+  } else {
+    const dy = Math.max(30, hy * 0.5);
+    // 시작 노드 오른쪽(포트)에서 세로로 휘어 목표 노드 왼쪽으로 들어옴 — 왼쪽 이탈 방지
+    return `M ${x1} ${y1} C ${x1} ${y1+dy}, ${x2} ${y2-dy}, ${x2} ${y2}`;
+  }
 }
 
 // ── 1.3 인라인 라벨 편집 ──

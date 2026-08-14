@@ -2,7 +2,14 @@
 const express = require('express');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const pool = new Pool({ host: '/opt/data/pgdata', database: 'odds', user: 'hermes' });
+// server.js와 동일한 접속 규칙 — 미설정 시 VPS 기본값(유닉스 소켓) 유지
+const pool = new Pool(process.env.DATABASE_URL
+  ? { connectionString: process.env.DATABASE_URL }
+  : { host: process.env.PGHOST || '/opt/data/pgdata',
+      database: process.env.PGDATABASE || 'odds',
+      user: process.env.PGUSER || 'hermes',
+      password: process.env.PGPASSWORD,
+      port: process.env.PGPORT });
 const router = express.Router();
 
 // ------- 인증 미들웨어 -------
@@ -169,8 +176,35 @@ async function callTool(name, args, ctx) {
       return { content: [{ type: 'text', text: JSON.stringify({ message_id: 'msg_' + Date.now().toString(36), delivered: pushed, delivery_method: pushed ? 'websocket' : 'queued' }) }] };
     }
     case 'agent.list': {
-      const { rows } = await pool.query('SELECT id, name, role FROM agents ORDER BY id');
-      return { content: [{ type: 'text', text: JSON.stringify({ agents: rows.map(a => ({ agent_id: a.id, name: a.name, capabilities: [], tools: [], online: false, trust_score: 0 })) }) }] };
+      // capabilities/tools/trust_score 전용 컬럼은 없다 — agents.machine (JSONB)에 저장한다.
+      // online은 /api/team/status와 동일하게 agent_sessions 조인으로 계산한다.
+      const { capability, online_only } = args || {};
+      const { rows } = await pool.query(
+        `SELECT a.id, a.name, a.role, a.machine,
+                count(DISTINCT s.id) FILTER (
+                  WHERE s.status IN ('running','working','waiting')) AS active_sessions
+         FROM agents a
+         LEFT JOIN agent_sessions s ON s.agent_id = a.id
+         GROUP BY a.id, a.name, a.role, a.machine
+         ORDER BY a.id`);
+      let agents = rows.map(a => {
+        // machine은 JSONB — pg가 이미 객체로 준다 (workflow.list의 node_count 버그와 동일 주의점)
+        let m = {};
+        try { m = (typeof a.machine === 'string') ? (JSON.parse(a.machine) || {}) : (a.machine || {}); }
+        catch (e) { console.warn('[mcp] agents.machine 파싱 실패:', a.id, e.message); }
+        return {
+          agent_id: a.id,
+          name: a.name,
+          role: a.role,
+          capabilities: Array.isArray(m.capabilities) ? m.capabilities : [],
+          tools: Array.isArray(m.tools) ? m.tools : [],
+          online: Number(a.active_sessions) > 0,
+          trust_score: typeof m.trust_score === 'number' ? m.trust_score : 0,
+        };
+      });
+      if (capability) agents = agents.filter(x => x.capabilities.includes(capability));
+      if (online_only) agents = agents.filter(x => x.online);
+      return { content: [{ type: 'text', text: JSON.stringify({ agents }) }] };
     }
     case 'agent.checkpoint': {
       const { session_id, status, note } = args || {};

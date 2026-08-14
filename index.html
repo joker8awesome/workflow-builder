@@ -8,25 +8,6 @@
 /* ═══ 최신 CSS 리빌드 — 디자인 토큰 + 현대 색상 공간 ═══ */
 @layer reset, tokens, layout, components, utilities;
 
-/* Isamanru font (noonnu free commercial, GongGames) */
-@font-face {
-  font-family: 'Isamanru';
-  src: url('fonts/Isamanru-Light.woff') format('woff');
-  font-weight: 300;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Isamanru';
-  src: url('fonts/Isamanru-Medium.woff') format('woff');
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Isamanru';
-  src: url('fonts/Isamanru-Bold.woff') format('woff');
-  font-weight: 700;
-  font-display: swap;
-}
 
 @layer tokens {
   :root {
@@ -70,7 +51,7 @@
     --shadow-md: 0 6px 24px rgba(0,0,0,.28);
     --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
     --topbar-h: 52px; --sidebar-w: 240px; --inspector-w: 280px;
-    --font: 'Isamanru', system-ui, -apple-system, sans-serif;
+    --font: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
   }
 }
 
@@ -671,7 +652,7 @@
     <span class="tb-sep"></span>
     <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
-    <button id="btn-mcp" class="tb-action" style="color:var(--accent);border-color:rgba(0,255,135,.3)">🤖 MCP</button>
+    <button id="btn-mcp" class="tb-action" style="color:#ffffff;border-color:rgba(0,255,135,.3);font-weight:700">🤖 MCP</button>
     <button id="btn-team" class="tb-action">🤝 팀</button>
     <div style="position:relative" id="more-wrap">
       <button id="btn-more" class="tb-action">⋯ 더보기 ▾</button>
@@ -4985,7 +4966,7 @@ function buildMoreMenu() {
   const mcpItem = document.createElement('button');
   mcpItem.className = 'mm-item';
   mcpItem.textContent = '🤖 MCP 지시';
-  mcpItem.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:var(--accent);font-size:13px;cursor:pointer';
+  mcpItem.style.cssText = 'display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;border-radius:8px;color:#ffffff;font-size:13px;cursor:pointer';
   mcpItem.addEventListener('click', () => {
     menu.style.display = 'none';
     toggleMcpPanel();

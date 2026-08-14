@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>워크플로우 빌더</title>
+<title>커멘드센터</title>
 <style>
 /* ═══ 최신 CSS 리빌드 — 디자인 토큰 + 현대 색상 공간 ═══ */
 @layer reset, tokens, layout, components, utilities;
@@ -656,7 +656,7 @@
 <body>
   <header id="topbar">
     <button id="sidebar-toggle">☰</button>
-    <strong>워크플로우 빌더</strong>
+    <strong>커멘드센터</strong>
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
     <span id="sync-status" style="font-size:12px;color:#888"></span>
@@ -3662,7 +3662,7 @@ function initPWA() {
     const link = document.createElement('link');
     link.rel = 'manifest';
     link.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify({
-      name: '워크플로우 빌더', short_name: '워크플로우',
+      name: '커멘드센터', short_name: '커멘드센터',
       start_url: '.', display: 'standalone', theme_color: '#0a0d10',
       background_color: '#0a0d10', icons: []
     }));
@@ -4903,7 +4903,7 @@ function askNPS() {
     if (localStorage.getItem(LS_KEY + '_nps')) return;
     setTimeout(() => {
       toastHTML('<div style="min-width:280px"><strong style="display:block;margin-bottom:8px;color:var(--accent)">만족도 조사</strong>' +
-        '<div style="font-size:12px;color:var(--panel-text-dim);margin-bottom:10px">이 워크플로우 빌더가 유용한가요?</div>' +
+        '<div style="font-size:12px;color:var(--panel-text-dim);margin-bottom:10px">커멘드센터가 유용한가요?</div>' +
         '<div style="display:flex;gap:6px">' +
         '<button id="nps-yes" class="tb-action" style="flex:1">👍 좋아요</button>' +
         '<button id="nps-no" class="tb-action" style="flex:1">👎 아쉬워요</button>' +

@@ -199,7 +199,7 @@ router.post('/mcp', authenticate, async (req, res) => {
     return res.json(rpcError(body.id ?? null, -32600, 'header/body method mismatch'));
   }
   if (method === 'initialize') {
-    return res.json({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: body.params?.protocolVersion || '2026-07-28', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'workflow-builder', version: '1.0.0' } } });
+    return res.json({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: body.params?.protocolVersion || '2026-07-28', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'command-center', version: '1.0.0' } } });
   }
   if (method === 'tools/list') {
     return res.json({ jsonrpc: '2.0', id: body.id, result: { tools: TOOLS } });

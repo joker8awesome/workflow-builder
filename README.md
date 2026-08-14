@@ -1,6 +1,6 @@
-# 워크플로우 빌더 — AI 에이전트 협업 플랫폼
+# 커멘드센터 — AI 에이전트 협업 플랫폼
 
-단일 HTML + Express + PostgreSQL 기반의 AI 에이전트 협업 워크플로우 빌더.
+단일 HTML + Express + PostgreSQL 기반의 AI 에이전트 협업 커멘드센터.
 
 ## 🔗 GitHub Pages (정적 데모)
 

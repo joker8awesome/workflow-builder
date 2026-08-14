@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "express": "^5.2.1",
     "pg": "^8.23.0",
     "pm2": "^7.0.3",

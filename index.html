@@ -1234,6 +1234,7 @@ function renderCanvas() {
       ${agentHandoffInfo(n)}
       ${blockerBadge(n)}
       ${edgeStatusBadge(n, wf)}
+      ${n.agentId ? agentLiveBadge(n.agentId) : ''}
       <span class="nport" data-port="out"></span>
       ${n.locked ? '<span class="lock-badge">🔒</span>' : ''}`;
     // 선택된 에이전트의 담당 노드 강조
@@ -1461,7 +1462,8 @@ function renderInspector() {
       <label>이름</label><input id="f-label" value="${escapeHtml(n.label)}">
       <label>설명</label><textarea id="f-desc">${escapeHtml(n.desc)}</textarea>
       <label>담당자</label><input id="f-assignee" value="${escapeHtml(n.assignee)}">
-      ${n.agentId ? `<button id="cred-issue" class="tb-action" style="width:100%;margin-top:6px">🔑 자격증명 발급 (한 번만 표시)</button>` : ''}
+      ${n.agentId ? `<button id="cred-issue" class="tb-action" style="width:100%;margin-top:6px">🔑 자격증명 발급 (한 번만 표시)</button>
+      <button id="cmd-send" class="tb-action" style="width:100%;margin-top:6px">📡 에이전트에게 명령 보내기</button>` : ''}
       <label>기한</label><input id="f-due" type="date" value="${escapeHtml(n.due)}">
       <label>태그 (콤마 구분)</label><input id="f-tags" value="${escapeHtml((n.tags||[]).join(', '))}">
       ${n.type === 'connector' ? `
@@ -1561,6 +1563,11 @@ function renderInspector() {
         localStorage.setItem(LS_KEY + '_cred_shown', JSON.stringify(shown));
         toast('🔑 키 발급됨 (한 번만 표시): ' + j.api_key, 8000);
       } else toast(j ? j.error : '발급 실패 (서버 필요)');
+    });
+    const cmdBtn = document.getElementById('cmd-send');
+    if (cmdBtn) cmdBtn.addEventListener('click', () => {
+      const agentId = n.agentId;
+      if (agentId) promptAgentCommand(agentId);
     });
     const fMax = document.getElementById('f-maxtok');
     if (fMax) fMax.addEventListener('change', (e) => { n.max_tokens = e.target.value ? +e.target.value : undefined; saveStore(); });
@@ -4567,6 +4574,49 @@ async function loadExamples() {
       '<span style="color:var(--accent)">설치 →</span></button>'
     ).join('');
   } catch (e) {}
+}
+
+// === 라이브 에이전트 — 연결 상태 + 명령 보내기 ===
+let onlineAgents = new Set();
+async function refreshAgentStatus() {
+  try {
+    const r = await fetch(API_BASE + '/api/agents/status');
+    const j = await r.json();
+    if (j.success) {
+      onlineAgents = new Set(j.online || []);
+      renderAll();  // 배지 갱신
+    }
+  } catch (e) {}
+}
+setInterval(refreshAgentStatus, 5000);  // 5초 폴링
+// 에이전트 연결 상태 배지 — 노드의 에이전트 배지 옆 초록/회색 점
+function agentLiveBadge(agentId) {
+  if (!agentId) return '';
+  const on = onlineAgents.has(agentId);
+  return '<span class="agent-live" title="' + (on ? '온라인 (WS 연결됨)' : '오프라인') + '" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (on ? '#00ff87' : '#5a6470') + ';box-shadow:' + (on ? '0 0 6px #00ff87' : 'none') + ';margin-left:4px;vertical-align:middle"></span>';
+}
+// 에이전트에게 명령 보내기
+async function sendAgentCommand(agentId, commandText) {
+  if (!agentId) return;
+  const traceId = 'trace_' + Date.now().toString(36);
+  try {
+    const r = await fetch(API_BASE + '/api/agent/command', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_agent: agentId, msg_type: 'command', from_agent: 'web', payload: { text: commandText }, trace_id: traceId })
+    });
+    const j = await r.json();
+    if (j.success) {
+      toast((j.pushed ? '📡 명령 전송됨 (온라인): ' : '💾 명령 대기열 저장 (오프라인): ') + agentId);
+      return j;
+    }
+    toast(j.error || '전송 실패');
+  } catch (e) { toast('전송 실패 (서버 필요)'); }
+  return null;
+}
+// 명령 입력 프롬프트
+function promptAgentCommand(agentId) {
+  const text = prompt('[' + agentId + '] 보낼 명령:');
+  if (text) sendAgentCommand(agentId, text);
 }
 
 // === 초기화 ===

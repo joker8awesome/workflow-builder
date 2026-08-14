@@ -265,6 +265,21 @@ app.post('/api/agent/report', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 에이전트 연결 상태 API — 웹 UI 라이브 표시용 ===
+app.get('/api/agents/status', (req, res) => {
+  const online = [];
+  agentSockets.forEach((ws, agentId) => {
+    if (ws.readyState === 1) online.push(agentId);
+  });
+  res.json({ success: true, online });
+});
+// 에이전트 연결/해제를 웹 UI에 푸시
+function broadcastAgentStatus() {
+  const online = [];
+  agentSockets.forEach((ws, agentId) => { if (ws.readyState === 1) online.push(agentId); });
+  broadcastWf('_agent_status', { agent_status: online });
+}
+
 // === 에이전트 명령 전송 API — DB 기록 + WS push ===
 app.post('/api/agent/command', async (req, res) => {
   try {
@@ -314,6 +329,7 @@ agentWss.on('connection', (ws, req) => {
       agentSockets.set(agentId, ws);
       ws.send(JSON.stringify({ type: 'connected', agent_id: agentId, ts: new Date().toISOString() }));
       console.log('[agent-ws] 연결됨:', agentId);
+      broadcastAgentStatus();
     })
     .catch(e => { ws.close(4002, 'db error'); });
   ws.on('message', (raw) => {
@@ -325,7 +341,7 @@ agentWss.on('connection', (ws, req) => {
       }
     } catch (e) {}
   });
-  ws.on('close', () => { agentSockets.delete(agentId); console.log('[agent-ws] 해제:', agentId); });
+  ws.on('close', () => { agentSockets.delete(agentId); console.log('[agent-ws] 해제:', agentId); broadcastAgentStatus(); });
 });
 
 // 에이전트에게 명령 전송 — orchestrator/웹 UI에서 호출

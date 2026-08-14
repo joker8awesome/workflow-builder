@@ -672,6 +672,7 @@
     <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
     <button id="btn-mcp" class="tb-action" style="color:var(--accent);border-color:rgba(0,255,135,.3)">🤖 MCP</button>
+    <button id="btn-team" class="tb-action">🤝 팀</button>
     <div style="position:relative" id="more-wrap">
       <button id="btn-more" class="tb-action">⋯ 더보기 ▾</button>
       <div id="more-menu" style="display:none;position:absolute;top:40px;right:0;z-index:90;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:8px;min-width:190px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,.4)"></div>
@@ -970,6 +971,18 @@
     <button id="mcp-send" class="tb-action" style="width:100%;margin-top:8px;background:var(--accent);color:#04100a;font-weight:700">📡 지시 보내기</button>
     <div style="margin-top:10px;font-size:11px;color:var(--panel-text-faint)">최근 지시/결과</div>
     <div id="mcp-log" style="font-size:11px;color:var(--panel-text);margin-top:4px"></div>
+  </div>
+  <!-- 에이전트 팀 대시보드 -->
+  <div id="team-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:79;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:520px;max-height:78vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h4 style="color:var(--accent);font-size:14px">🤝 에이전트 팀 (15개 세션)</h4>
+      <button id="team-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <button class="tb-action" id="team-refresh" style="flex:1">🔄 새로고침</button>
+      <button class="tb-action" id="team-bootstrap" style="flex:2;color:var(--accent);border-color:rgba(0,255,135,.3)">🚀 15개 세션 부트스트랩</button>
+    </div>
+    <div id="team-list" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
   <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -5198,6 +5211,55 @@ async function refreshMCPStatus() {
     el.innerHTML = on ? '<span style="color:var(--accent)">● 온라인</span>' : '<span style="color:var(--red)">○ 오프라인</span>';
   } catch (e) { el.innerHTML = '<span style="color:var(--red)">○ 오프라인</span>'; }
 }
+// === 에이전트 팀 대시보드 ===
+async function loadTeamStatus() {
+  const list = document.getElementById('team-list');
+  if (!list) return;
+  try {
+    const r = await fetch(API_BASE + '/api/team/status');
+    const j = await r.json();
+    if (!j.success) return;
+    const team = j.team || [];
+    list.innerHTML = team.map(t => {
+      const active = (t.active_sessions || 0) > 0;
+      const pend = t.pending_msgs || 0;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;margin-bottom:5px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px">' +
+        '<span style="width:10px;height:10px;border-radius:50%;background:' + escapeHtml(t.color || '#888') + '"></span>' +
+        '<strong style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(t.agent_name) + '</strong>' +
+        (active ? '<span style="color:var(--accent);font-size:10px">● 활성</span>' : '<span style="color:var(--panel-text-faint);font-size:10px">○ 대기</span>') +
+        '<span style="color:var(--panel-text-faint);font-size:10px">세션 ' + t.total_sessions + '</span>' +
+        (pend > 0 ? '<span style="color:var(--yellow);font-size:10px">📨 ' + pend + '</span>' : '') +
+        '</div>';
+    }).join('');
+  } catch (e) { list.innerHTML = '<span style="color:var(--panel-text-faint)">로드 실패</span>'; }
+}
+async function bootstrapTeam() {
+  // 15개 에이전트 세션 생성
+  const ids = ['ag_orch','ag_researcher','ag_analyst','ag_writer','ag_reviewer','ag_collector','ag_developer','ag_tester','ag_designer','ag_security','ag_communicator','ag_scheduler','ag_integrator','ag_archiver','ag_auditor'];
+  let ok = 0;
+  for (const id of ids) {
+    try {
+      // 기존 세션 확인 후 없으면 생성 (멱등)
+      const list = await fetch(API_BASE + '/api/sessions').then(r => r.json());
+      const exists = (list.sessions || []).some(s => s.agent_id === id);
+      if (exists) { ok++; continue; }
+      const r = await fetch(API_BASE + '/api/sessions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_id: id, status: 'idle' })
+      });
+      const j = await r.json();
+      if (j.success) ok++;
+    } catch (e) {}
+  }
+  toast('🚀 세션 부트스트랩: ' + ok + '/15');
+  loadTeamStatus();
+}
+function toggleTeamPanel() {
+  const panel = document.getElementById('team-panel');
+  if (!panel) return;
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') loadTeamStatus();
+}
 async function sendMcpCommand(text) {
   if (!text.trim()) return;
   mcpLog('📤 지시: ' + text);
@@ -5338,6 +5400,10 @@ document.getElementById('btn-diff').addEventListener('click', showWfDiff);
 document.getElementById('btn-risk').addEventListener('click', showRiskDiff);
 document.getElementById('btn-feedback').addEventListener('click', openFeedback);
 document.getElementById('btn-mcp').addEventListener('click', () => { toggleMcpPanel(); });
+document.getElementById('btn-team').addEventListener('click', () => { toggleTeamPanel(); });
+document.getElementById('team-close').addEventListener('click', () => { document.getElementById('team-panel').style.display = 'none'; });
+document.getElementById('team-refresh').addEventListener('click', loadTeamStatus);
+document.getElementById('team-bootstrap').addEventListener('click', bootstrapTeam);
 document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
 document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';

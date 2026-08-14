@@ -277,6 +277,46 @@ app.post('/api/agent/report', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 에이전트 팀 협업 — 역할 기반 라우팅 규칙 ===
+const TEAM_ROUTES = {
+  ag_orch:        { receive: ['*'],             default_to: 'ag_communicator' },
+  ag_researcher:  { receive: ['ag_orch','ag_collector'], default_to: 'ag_analyst' },
+  ag_analyst:     { receive: ['ag_researcher','ag_orch'], default_to: 'ag_writer' },
+  ag_writer:      { receive: ['ag_analyst','ag_orch'],    default_to: 'ag_reviewer' },
+  ag_reviewer:    { receive: ['ag_writer','ag_developer'], default_to: 'ag_orch' },
+  ag_collector:   { receive: ['ag_orch','ag_researcher'], default_to: 'ag_researcher' },
+  ag_developer:   { receive: ['ag_orch','ag_designer'],   default_to: 'ag_tester' },
+  ag_tester:      { receive: ['ag_developer','ag_orch'],  default_to: 'ag_reviewer' },
+  ag_designer:    { receive: ['ag_orch'],                 default_to: 'ag_developer' },
+  ag_security:    { receive: ['ag_orch','ag_developer'],  default_to: 'ag_reviewer' },
+  ag_communicator:{ receive: ['ag_orch'],                 default_to: 'ag_archiver' },
+  ag_scheduler:   { receive: ['ag_orch'],                 default_to: 'ag_communicator' },
+  ag_integrator:  { receive: ['ag_orch','ag_developer'],  default_to: 'ag_tester' },
+  ag_archiver:    { receive: ['*'],                       default_to: 'ag_orch' },
+  ag_auditor:     { receive: ['ag_orch'],                 default_to: 'ag_orch' },
+};
+// 다음 담당자 추천 — 핸드오프 프로토콜
+app.get('/api/team/next/:agentId', (req, res) => {
+  const route = TEAM_ROUTES[req.params.agentId];
+  res.json({ success: true, agent_id: req.params.agentId, next: route ? route.default_to : 'ag_orch', receive_from: route ? route.receive : ['*'] });
+});
+// 팀 전체 상태 — 15개 세션 한눈에
+app.get('/api/team/status', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.id AS agent_id, a.name AS agent_name, a.role, a.color,
+              count(DISTINCT s.id) FILTER (WHERE s.status IN ('running','working','waiting')) AS active_sessions,
+              count(DISTINCT s.id) AS total_sessions,
+              (SELECT count(*) FROM agent_messages m WHERE m.to_agent = a.id AND m.status = 'pending') AS pending_msgs
+       FROM agents a
+       LEFT JOIN agent_sessions s ON s.agent_id = a.id
+       WHERE a.id IN (${Object.keys(TEAM_ROUTES).map((_, i) => '$' + (i + 1)).join(',')})
+       GROUP BY a.id, a.name, a.role, a.color
+       ORDER BY a.id`, Object.keys(TEAM_ROUTES));
+    res.json({ success: true, team: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === 에이전트 연결 상태 API — 웹 UI 라이브 표시용 ===
 app.get('/api/agents/status', (req, res) => {
   const online = [];
@@ -721,6 +761,19 @@ app.get('/api/cards', async (req, res) => {
 });
 
 // === 에이전트 세션/메시지 API ===
+// 세션 생성 — 15개 팀 부트스트랩용
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { agent_id, status, node_id } = req.body || {};
+    if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
+    const sid = 'sess_' + Date.now().toString(36) + Math.floor(Math.random() * 100);
+    const { rows } = await pool.query(
+      `INSERT INTO agent_sessions (id, agent_id, node_id, status, workspace) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+      [sid, agent_id, node_id || '', status || 'idle', '/opt/data/agents/' + agent_id]
+    );
+    res.json({ success: true, session_id: rows[0].id });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
 app.get('/api/sessions', async (req, res) => {
   try {
     const { wf } = req.query || {};

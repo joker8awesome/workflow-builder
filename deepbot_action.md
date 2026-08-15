@@ -227,4 +227,5 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서#11: /api/approvals 잠금 — ag_scheduler 키, WF_SCHEDULER_KEY, WF_APPROVALS_AUTH=1, 무인증 401/키 200/알림 지속 | ✅ |
 | 2026-08-15 | 센터장 handoff-12 취소 수신(msg 165) — 의도된 정리 확인 일치 | ✅ |
 | 2026-08-15 | 지시서#14: 커멘드센터 전용 봇 전환 — 새 토큰/chat_id, 웹훅 등록, 버튼 콜백 수신(acceptCount 1, id24 approved) | ✅ |
+| 2026-08-15 | 지시서#15: 큐 정리(163·164·165·167·168 completed), 배포(135건), 웹훅 유지(true), 스키마 덤프 20테이블, 기동방식 답변 | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |

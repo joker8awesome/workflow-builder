@@ -244,4 +244,4 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 지시서#21 작성 — 큐로 전달 불가(큐 자체가 막힘), 사람이 직접 전달. STEP1 증거 확보 후 복구 순서 | 대기 |
 | 2026-08-16 | 할매봇 #21 중간보고 반영 — 스텁 자기-exec은 pull로 이미 해소(무한루프 프로세스 없음), Hermes cron 실경로는 /opt/data/scripts/queue-trigger.sh(저장소 밖 래퍼)로 확인 | 확인 |
 | 2026-08-16 | 기동 실패 시 지시 유실 수정 — seen을 기동 전 저장하던 것을 시도 횟수(tries)로 대체. 성공해야 seen, 실패는 MAX_TRIES(3)까지 재시도 후 포기+경고. msg_176이 이 경로로 묻혔던 건 (fb1ab65) | ✅ |
-| 2026-08-16 | 지시서#20 수행 (자동 픽업) — 배포 확정(HEAD 580333c, npm test 11스위트 166건), 웹훅 재등록(--apply, allowed_updates=message,callback_query, 오류 없음), 서버 restart, msg_176 claim | ✅ 완료 |
+| 2026-08-16 | 지시서#22 수행 (자동 픽업) — 배포 확정(HEAD 7671a9c, fb1ab65 포함), 재시도 테스트 전부 PASS(5)항 7건, 무효 crontab 항목 제거, msg_178 claim. 잠금 경합 이슈 확인(테스트는 프로덕션 잠금 해제 후 실행해야 통과) | ✅ 완료 |

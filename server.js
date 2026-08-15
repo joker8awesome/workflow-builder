@@ -764,7 +764,9 @@ app.get('/api/telegram/status', requireScope(pool, 'mcp:read', { allowAccessToke
     chat_id_set: Boolean(process.env.WF_TELEGRAM_CHAT_ID),
     notify_enabled: notify.enabled(),
     ...tgStat,
-    hint: tgStat.lastRejectReason === 'secret_mismatch'
+    webhook_registered: Boolean(tgStat.webhookUrl),
+    hint: tgStat.webhookUrl === '' ? '웹훅이 등록돼 있지 않다 — 같은 봇 토큰으로 getUpdates 롱폴링을 도는 프로세스가 있는지 확인할 것'
+      : tgStat.lastRejectReason === 'secret_mismatch'
       ? '텔레그램에 등록된 secret 이 서버 설정과 다르다 — setup-telegram-webhook.js --apply 로 재등록'
       : (tgStat.acceptCount === 0 && tgStat.rejectCount === 0
           ? '콜백이 한 번도 도달하지 않았다 — 웹훅 미등록이거나 URL 이 잘못됐을 수 있다'
@@ -822,6 +824,29 @@ const tgStat = {
   rejectCount: 0,
   acceptCount: 0,
 };
+
+// 웹훅 등록 상태를 텔레그램에 직접 물어본다.
+async function checkWebhookAlive() {
+  if (!notify.enabled()) return;
+  try {
+    const info = await notify.tg('getWebhookInfo', {});
+    if (!info.ok) { console.warn('[tg] 웹훅 상태 조회 실패:', info.reason); return; }
+    const url = (info.result && info.result.url) || '';
+    tgStat.webhookUrl = url;
+    tgStat.webhookCheckedAt = new Date().toISOString();
+    tgStat.webhookLastError = (info.result && info.result.last_error_message) || null;
+    if (!url) {
+      console.warn('[tg] ⚠ 웹훅이 등록돼 있지 않다 — 승인 버튼이 동작하지 않는다.');
+      console.warn('[tg]   같은 봇 토큰으로 getUpdates 롱폴링을 도는 프로세스가 있으면 ' +
+        '텔레그램이 웹훅을 해제한다. 전용 봇을 쓰거나 롱폴링을 멈출 것.');
+      console.warn('[tg]   재등록: node ops/setup-telegram-webhook.js --apply');
+    } else if (tgStat.webhookLastError) {
+      console.warn(`[tg] ⚠ 웹훅 마지막 오류: ${tgStat.webhookLastError}`);
+    }
+  } catch (e) {
+    console.warn('[tg] 웹훅 상태 확인 오류:', e.message);
+  }
+}
 
 app.post('/api/telegram/webhook', async (req, res) => {
   const secret = process.env.WF_TELEGRAM_WEBHOOK_SECRET || '';
@@ -1700,6 +1725,12 @@ ${WF_SCHEMA_EXAMPLE}`;
 server.listen(PORT, () => {
   approvalGate.logConfig();
   console.log(`[approval] /api/approvals 인증: ${APPROVALS_AUTH ? '요구함' : '열려 있음 (WF_APPROVALS_AUTH=1 로 잠금)'}`);
+  // 웹훅이 살아 있는지 주기적으로 확인한다.
+  // 같은 봇 토큰으로 getUpdates 롱폴링을 도는 프로세스가 있으면 텔레그램이
+  // 웹훅을 해제해 버린다. 그러면 콜백이 아예 안 오고, 서버 입장에서는
+  // '아무 일도 안 일어나는' 상태라 알아챌 방법이 없다 — 실제로 그렇게 한참 갔다.
+  checkWebhookAlive();
+  setInterval(checkWebhookAlive, 10 * 60 * 1000);
   if (!notify.enabled()) console.warn('[notify] 텔레그램 미설정 — 승인 요청이 사용자에게 전달되지 않는다');
   console.log(`워크플로우 빌더 서버: http://localhost:${PORT}`);
 });

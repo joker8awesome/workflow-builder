@@ -226,4 +226,5 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서#12: 워크플로우 손실 확인 — 의도된 삭제(사용자 지시), 백업 wf_20260815.sql에 wf_tpl_team 포함(복구 가능), _preserve 보존 | ✅ |
 | 2026-08-15 | 지시서#11: /api/approvals 잠금 — ag_scheduler 키, WF_SCHEDULER_KEY, WF_APPROVALS_AUTH=1, 무인증 401/키 200/알림 지속 | ✅ |
 | 2026-08-15 | 센터장 handoff-12 취소 수신(msg 165) — 의도된 정리 확인 일치 | ✅ |
+| 2026-08-15 | 지시서#14: 커멘드센터 전용 봇 전환 — 새 토큰/chat_id, 웹훅 등록, 버튼 콜백 수신(acceptCount 1, id24 approved) | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |

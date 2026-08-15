@@ -1487,6 +1487,8 @@ let panMode = false, panStart2 = null;
 let marquee = null;
 let marqueeActive = false;
 function setupMarquee() {
+  // 영역 지정(마퀴) 기능 제거됨 — 사용자 요청 (2026-08-15)
+  return;
   const cw = document.getElementById('canvas-wrap');
   if (!cw || cw.dataset.mqReady) return;
   cw.dataset.mqReady = '1';
@@ -5379,7 +5381,6 @@ async function sendMcpCommand(text) {
 renderPalette();
 setupCanvasDrop();
 setupSpacePan();
-setupMarquee();
 bindWfFilter();
 loadStore();
 const wf0 = currentWorkflow();

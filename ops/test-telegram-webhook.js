@@ -177,8 +177,7 @@ function post(headers, body) {
     srv.includes("app.get('/api/telegram/status'"),
     '봇 토큰 없이 밖에서 진단할 방법이 필요하다');
 
-  console.log('
-7) 웹훅이 조용히 해제되는 것을 감지하는가');
+  console.log('\n7) 웹훅이 조용히 해제되는 것을 감지하는가');
   // 같은 봇 토큰으로 getUpdates 롱폴링을 도는 프로세스가 있으면 텔레그램이
   // 웹훅을 해제한다. 그러면 콜백이 아예 안 와서 서버는 '아무 일도 안 일어난' 상태가 된다.
   // 실제로 이걸 못 알아채고 secret 만 계속 의심했다.

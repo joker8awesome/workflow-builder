@@ -89,16 +89,24 @@ const cb = (data, chat = '999', id = 'cq1', user = 'tester') => ({
   callback_query: { id, data, from: { username: user }, message: { message_id: 7, chat: { id: chat }, text: 'req' } },
 });
 
+// fetch 가 아니라 http.request 를 쓴다.
+// listen(0) 이 잡는 임의 포트가 undici 의 차단 포트 목록(6000 등)에 걸리면
+// fetch 가 "bad port" 로 실패해 테스트가 간헐적으로 깨진다.
+// node:http 에는 그 목록이 없어 어떤 포트든 붙는다.
 function post(headers, body) {
-  return new Promise(resolve => {
-    const srv = app.listen(0, async () => {
+  return new Promise((resolve, reject) => {
+    const srv = app.listen(0, () => {
       const port = srv.address().port;
-      const r = await fetch(`http://127.0.0.1:${port}/api/telegram/webhook`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...headers },
-        body: JSON.stringify(body),
+      const payload = JSON.stringify(body);
+      const rq = http.request({
+        host: '127.0.0.1', port, path: '/api/telegram/webhook', method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), ...headers },
+      }, rs => {
+        rs.resume();
+        rs.on('end', () => setTimeout(() => srv.close(() => resolve(rs.statusCode)), 60));
       });
-      await new Promise(s => setTimeout(s, 60)); // 비동기 후처리 대기
-      srv.close(() => resolve(r.status));
+      rq.on('error', e => srv.close(() => reject(e)));
+      rq.end(payload);
     });
   });
 }

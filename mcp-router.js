@@ -71,7 +71,9 @@ const TOOLS = [
   { name: 'agent.tasks.claim', description: '명령 클레임 (동시 처리 방지)', inputSchema: { type: 'object', required: ['message_id'], properties: { message_id: { type: 'string' } } } },
   { name: 'agent.payload.get', description: 'payload_ref를 실제 데이터로 해석', inputSchema: { type: 'object', required: ['payload_ref'], properties: { payload_ref: { type: 'string' } } } },
   { name: 'agent.report', description: '작업 결과 보고', inputSchema: { type: 'object', required: ['trace_id', 'task_status'], properties: { trace_id: { type: 'string' }, task_status: { enum: ['completed', 'failed'] }, result: {}, error: { type: 'string' }, duration_ms: { type: 'number' } } } },
-  { name: 'workflow.list', description: '등록된 워크플로우 목록', inputSchema: { type: 'object', properties: { tag: { type: 'string' }, limit: { type: 'number' } } } },
+  // tag 는 선언돼 있었으나 wf_workflows 에 해당 컬럼이 없어 구현할 수 없다.
+  // 없는 기능을 스키마에 남겨두면 호출자가 넘긴 값이 조용히 무시된다 — 그래서 뺀다.
+  { name: 'workflow.list', description: '등록된 워크플로우 목록', inputSchema: { type: 'object', properties: { limit: { type: 'number' } } } },
   { name: 'workflow.execute', description: '워크플로우 실행 트리거', inputSchema: { type: 'object', required: ['workflow_id'], properties: { workflow_id: { type: 'string' }, inputs: { type: 'object' }, async: { type: 'boolean', default: true } } } },
   { name: 'workflow.get_status', description: '실행 상태 조회', inputSchema: { type: 'object', required: ['run_id'], properties: { run_id: { type: 'string' } } } },
   { name: 'workflow.get_trace', description: '실행 트레이스 조회', inputSchema: { type: 'object', required: ['trace_id'], properties: { trace_id: { type: 'string' }, include_children: { type: 'boolean', default: true } } } },
@@ -96,10 +98,19 @@ async function callTool(name, args, ctx) {
     }
     case 'agent.tasks.list_pending': {
       const limit = Math.min((args && args.limit) || 20, 100);
+      // since 는 선언만 돼 있고 무시됐다. 폴링하는 쪽이 "이 시각 이후"만 받으려
+      // 넘겨도 매번 전체가 오고 있었다.
+      const since = (args && args.since) ? new Date(args.since) : null;
+      const useSince = since && !isNaN(since.getTime());
+      if (args && args.since && !useSince) {
+        console.warn('[mcp] list_pending: since 파싱 실패, 무시함:', args.since);
+      }
       const { rows } = await pool.query(
         `SELECT id, from_agent, msg_type, payload_ref, trace_id, status, created_at
          FROM agent_messages WHERE to_agent = $1 AND msg_type IN ('command','instruction') AND status = 'pending'
-         ORDER BY created_at ASC LIMIT $2`, [agent_id, limit]);
+         ${useSince ? 'AND created_at > $3' : ''}
+         ORDER BY created_at ASC LIMIT $2`,
+        useSince ? [agent_id, limit, since.toISOString()] : [agent_id, limit]);
       const tasks = rows.map(r => ({ message_id: 'msg_' + r.id, from_agent: r.from_agent, type: r.msg_type, payload_ref: r.payload_ref, trace_id: r.trace_id, timestamp: r.created_at, claimed_by: null }));
       return { content: [{ type: 'text', text: JSON.stringify({ tasks }) }] };
     }
@@ -147,7 +158,13 @@ async function callTool(name, args, ctx) {
       return { content: [{ type: 'text', text: JSON.stringify({ report_message_id: 'msg_' + Date.now().toString(36), result_payload_ref: rref, checkpoint_id: 'chk_' + Date.now().toString(36), span_id: 'span_' + Date.now().toString(36) }) }] };
     }
     case 'workflow.list': {
-      const { rows } = await pool.query('SELECT id, name, data, updated_at FROM wf_workflows ORDER BY updated_at DESC');
+      // limit 은 선언만 돼 있고 무시됐다. 넘기면 실제로 줄어들도록 한다.
+      // 미지정 시에는 기존 동작(전체 반환)을 유지한다 — 기본값을 넣으면
+      // 지금까지 전체를 받아 쓰던 호출자가 조용히 잘린 결과를 받게 된다.
+      const lim = Math.min(Math.max(parseInt((args || {}).limit, 10) || 0, 0), 500);
+      const { rows } = await pool.query(
+        'SELECT id, name, data, updated_at FROM wf_workflows ORDER BY updated_at DESC' +
+        (lim ? ' LIMIT $1' : ''), lim ? [lim] : []);
       const wfs = rows.map(r => { let d = {}; try { d = (typeof r.data === 'string') ? (JSON.parse(r.data) || {}) : (r.data || {}); } catch (e) { console.warn('[mcp] workflow.data 파싱 실패:', r.id, e.message); } return { id: r.id, name: r.name, node_count: (d.nodes || []).length, updated_at: r.updated_at }; });
       return { content: [{ type: 'text', text: JSON.stringify({ workflows: wfs }) }] };
     }
@@ -165,7 +182,16 @@ async function callTool(name, args, ctx) {
     }
     case 'workflow.get_trace': {
       const trace = (args && args.trace_id) || '';
-      const { rows } = await pool.query('SELECT node_id, agent_id, operation, duration_ms, result FROM agent_spans WHERE trace_id = $1 ORDER BY duration_ms', [trace]);
+      // include_children 은 선언만 돼 있고 무시됐다 (기본 true).
+      // false 면 최상위 스팬만 — 오케스트레이터는 하위 호출의 parent_id 에
+      // 상위 trace_id 를 넣으므로, 최상위는 parent_id 가 자기 trace_id 이거나 비어 있다.
+      const includeChildren = !(args && args.include_children === false);
+      const { rows } = await pool.query(
+        `SELECT node_id, agent_id, operation, duration_ms, result, parent_id
+         FROM agent_spans WHERE trace_id = $1
+         ${includeChildren ? '' : "AND (parent_id = $2 OR parent_id IS NULL OR parent_id = '')"}
+         ORDER BY duration_ms`,
+        includeChildren ? [trace] : [trace, trace]);
       return { content: [{ type: 'text', text: JSON.stringify({ spans: rows, total_duration_ms: rows.reduce((a, r) => a + (r.duration_ms || 0), 0) }) }] };
     }
     case 'agent.send_message': {

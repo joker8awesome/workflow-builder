@@ -32,7 +32,7 @@
     --panel-border: var(--dark-border);
     --panel-text: #e8eaed;
     --panel-text-dim: #9aa3ad;
-    --panel-text-faint: #6b7681;
+    --panel-text-faint: #7f8a97;   /* 대비 4.68:1 — 이전 #6b7681 은 3.54:1 로 WCAG AA(4.5) 미달이었다 */
 
     --canvas-bg: var(--dark);
     --canvas-grid: color-mix(in srgb, var(--accent) 7%, transparent);
@@ -97,6 +97,9 @@
     width:280px;
     background:var(--panel-bg-2);
     border-inline-end:1px solid var(--panel-border);
+    /* 노드 팔레트 마지막 항목이 뷰포트 하단을 넘어가는데 스크롤이 없어
+       화면이 짧은 기기에서는 아예 닿을 수 없었다 */
+    overflow-y:auto;
     flex-shrink:0;display:flex;flex-direction:column;
   }
   #canvas-wrap{
@@ -962,12 +965,12 @@
   <!-- 에이전트 팀 대시보드 -->
   <div id="team-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:79;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:520px;max-height:78vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:14px">🤝 에이전트 팀 (15개 세션)</h4>
+      <h4 style="color:var(--accent);font-size:14px" id="team-title">🤝 에이전트 팀</h4>
       <button id="team-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button class="tb-action" id="team-refresh" style="flex:1">🔄 새로고침</button>
-      <button class="tb-action" id="team-bootstrap" style="flex:2;color:var(--accent);border-color:rgba(0,255,135,.3)">🚀 15개 세션 부트스트랩</button>
+      <button class="tb-action" id="team-bootstrap" style="flex:2;color:var(--accent);border-color:rgba(0,255,135,.3)">🚀 세션 부트스트랩</button>
     </div>
     <div id="team-list" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
@@ -1054,6 +1057,19 @@ async function checkServer() {
   } catch (e) { serverOnline = false; }
   updateSyncStatus();
   return serverOnline;
+}
+
+// 패널 오류 문구 — 원인을 알려준다.
+// 지금까지는 전부 "로드 실패"라고만 떠서, 서버가 없는 정적 배포(GitHub Pages)에서
+// 기능이 고장난 것처럼 보였다. 실제로는 서버가 필요한 기능일 뿐이다.
+function panelErrorHtml(what) {
+  const noServer = !API_BASE && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+  const msg = noServer
+    ? (what || '이 기능') + '은(는) 서버가 필요합니다.<br><span style="font-size:11px">현재 정적 배포 — 로컬 저장 모드로 동작 중</span>'
+    : wfAuthFailed
+      ? '인증이 필요합니다. 우측 상단 상태 표시를 눌러 API 키를 입력하세요.'
+      : (what || '데이터') + '을(를) 불러오지 못했습니다.<br><span style="font-size:11px">서버 응답 오류 — 잠시 후 다시 시도하세요</span>';
+  return '<span style="color:var(--panel-text-faint);line-height:1.6">' + msg + '</span>';
 }
 
 // === API 키 (팀 도구) ===
@@ -3955,7 +3971,7 @@ async function renderTraceTimeline() {
             (s.result && s.result.output ? '<div style="color:var(--panel-text-faint);font-size:10px;margin-top:2px">' + escapeHtml(String(s.result.output).slice(0, 80)) + '</div>' : '') +
             '</div>';
         }).join('');
-  } catch (e) { body.innerHTML = '<span style="color:var(--panel-text-faint)">트레이스 로드 실패</span>'; }
+  } catch (e) { body.innerHTML = panelErrorHtml('트레이스'); }
 }
 
 // 실행 퍼널/병목 차트
@@ -4960,7 +4976,7 @@ async function renderGovernance() {
         '<div style="font-size:10px;color:var(--panel-text-dim)">실행 ' + t.runs + '회 · 위험 ' + risk + ' · 자율성: ' + autonomy + '</div></div>';
     }).join('');
     body.innerHTML = rows || '<span style="color:var(--panel-text-faint)">신뢰 데이터 없음</span>';
-  } catch (e) { body.innerHTML = '<span style="color:var(--panel-text-faint)">로드 실패</span>'; }
+  } catch (e) { body.innerHTML = panelErrorHtml('신뢰도 데이터'); }
 }
 
 // 4: 인앱 피드백 + NPS
@@ -5282,7 +5298,8 @@ async function loadTeamStatus() {
   try {
     const r = await fetch(API_BASE + '/api/team/status');
     const j = await r.json();
-    if (!j.success) return;
+    // 이전에는 여기서 그냥 return 해서 패널이 빈 채로 남았다 — 사용자는 이유를 알 수 없다
+    if (!j.success) { list.innerHTML = panelErrorHtml('팀 현황'); return; }
     const team = j.team || [];
     list.innerHTML = team.map(t => {
       const active = (t.active_sessions || 0) > 0;
@@ -5295,7 +5312,9 @@ async function loadTeamStatus() {
         (pend > 0 ? '<span style="color:var(--yellow);font-size:10px">📨 ' + pend + '</span>' : '') +
         '</div>';
     }).join('');
-  } catch (e) { list.innerHTML = '<span style="color:var(--panel-text-faint)">로드 실패</span>'; }
+    const title = document.getElementById('team-title');
+    if (title) title.textContent = '🤝 에이전트 팀 (' + team.length + '명)';
+  } catch (e) { list.innerHTML = panelErrorHtml('팀 현황'); }
 }
 async function bootstrapTeam() {
   // 15개 에이전트 세션 생성

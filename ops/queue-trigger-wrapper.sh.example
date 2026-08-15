@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# 스케줄러가 저장소 밖의 고정 경로를 요구할 때 쓰는 리다이렉트 스텁.
+#
+# 🔴 이 파일을 ops/queue-trigger.sh 로 복사하지 마라.
+#    그러면 자기 자신을 exec 하는 무한 루프가 된다. 실제로 한 번 그렇게 됐다
+#    (커밋 d3e3d9a — 진짜 스크립트가 이 3줄짜리 스텁으로 덮여, 그 뒤로 큐가 비워지지 않았다).
+#
+# 설치:
+#   cp ops/queue-trigger-wrapper.sh.example ~/queue-trigger-wrapper.sh
+#   chmod 755 ~/queue-trigger-wrapper.sh
+#   스케줄러에는 ~/queue-trigger-wrapper.sh 를 등록한다.
+#
+# 저장소 안(ops/)에 두지 마라. 다음 배포 때 또 헷갈린다.
+
+exec /opt/data/projects/workflow-builder/ops/queue-trigger.sh "$@"

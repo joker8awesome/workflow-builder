@@ -134,6 +134,20 @@ srv.listen(0, '127.0.0.1', async () => {
     '죽은 프로세스의 잠금이 남으면 자동 픽업이 영구히 멈춘다');
   try { fs.unlinkSync(LOCK); } catch (e) {}
 
+  // --- 래퍼 스크립트가 자기 자신을 부르지 않는가 ---
+  // 실제로 있었던 사고다. 스케줄러가 저장소 밖 경로를 요구해서 리다이렉트 스텁을 만들었는데,
+  // 그걸 ops/queue-trigger.sh 자리에 커밋해버려 스크립트가 자기 자신을 exec 하게 됐다.
+  // 문법 오류가 아니라 조용히 도는 무한 루프라, 큐만 안 비워지고 아무 신호도 없다.
+  console.log('\n8) 래퍼가 자기 자신을 부르지 않는가');
+  const SH = fs.readFileSync(path.join(__dirname, 'queue-trigger.sh'), 'utf8');
+  check('queue-trigger.sh 가 자기 경로를 exec 하지 않는다',
+    !/exec\s+\S*queue-trigger\.sh/.test(SH),
+    '자기 자신을 exec 하면 무한 루프가 된다 (커밋 d3e3d9a 에서 실제 발생)');
+  check('저장소 루트를 해석한다', /ROOT=/.test(SH) && /queue-trigger\.js/.test(SH),
+    '스텁으로 덮이면 이 블록이 사라진다');
+  check('exec 전에 기록을 남긴다', /queue-trigger\.log/.test(SH),
+    'exec 뒤로는 코드가 돌지 않아, 앞에서 남기지 않으면 cron 기동 여부를 알 수 없다');
+
   cleanup();
   srv.close();
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));

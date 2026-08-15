@@ -756,6 +756,22 @@ app.post('/api/approvals', approvalsAuth(), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// 웹훅 상태 조회 — 봇 토큰 없이도 "버튼이 왜 안 되는지" 확인할 수 있다
+app.get('/api/telegram/status', requireScope(pool, 'mcp:read', { allowAccessToken: true }), (req, res) => {
+  res.json({
+    success: true,
+    configured: Boolean(process.env.WF_TELEGRAM_WEBHOOK_SECRET),
+    chat_id_set: Boolean(process.env.WF_TELEGRAM_CHAT_ID),
+    notify_enabled: notify.enabled(),
+    ...tgStat,
+    hint: tgStat.lastRejectReason === 'secret_mismatch'
+      ? '텔레그램에 등록된 secret 이 서버 설정과 다르다 — setup-telegram-webhook.js --apply 로 재등록'
+      : (tgStat.acceptCount === 0 && tgStat.rejectCount === 0
+          ? '콜백이 한 번도 도달하지 않았다 — 웹훅 미등록이거나 URL 이 잘못됐을 수 있다'
+          : null),
+  });
+});
+
 // 승인 결정 기록 — 텔레그램 버튼/웹 UI 양쪽에서 쓴다
 app.post('/api/approvals/:id/decide', requireAuth, async (req, res) => {
   try {
@@ -795,16 +811,40 @@ app.get('/api/approvals/config', (req, res) => {
 // 따라서 두 겹으로 막는다. 둘 중 하나라도 없으면 승인 위조가 가능하다:
 //   1) X-Telegram-Bot-Api-Secret-Token — setWebhook 시 심은 값과 일치해야 함
 //   2) chat_id — 지정된 채팅에서 온 것만 허용
+// 웹훅 상태 — "버튼이 안 눌린다"를 진단 가능하게 만든다.
+// secret 이 어긋나면 서버가 403 으로 조용히 거부하고, 텔레그램은 사용자에게
+// 아무것도 알리지 않는다. 그래서 증상이 "버튼 먹통"으로만 보이고
+// 원인을 밖에서 확인할 방법이 없었다. 실제로 그 상태로 한참 갔다.
+const tgStat = {
+  lastCallbackAt: null,   // 마지막으로 정상 처리한 콜백
+  lastRejectAt: null,     // 마지막 거부
+  lastRejectReason: null,
+  rejectCount: 0,
+  acceptCount: 0,
+};
+
 app.post('/api/telegram/webhook', async (req, res) => {
   const secret = process.env.WF_TELEGRAM_WEBHOOK_SECRET || '';
   if (!secret) {
+    tgStat.rejectCount++; tgStat.lastRejectAt = new Date().toISOString();
+    tgStat.lastRejectReason = 'no_secret_configured';
     console.warn('[tg] WF_TELEGRAM_WEBHOOK_SECRET 미설정 — 웹훅 거부');
     return res.sendStatus(403);
   }
   if (req.headers['x-telegram-bot-api-secret-token'] !== secret) {
-    console.warn('[tg] secret 불일치 — 거부');
+    tgStat.rejectCount++; tgStat.lastRejectAt = new Date().toISOString();
+    // 헤더가 아예 없는 것과 값이 다른 것을 구분한다 —
+    // 없으면 텔레그램이 아닌 곳에서 온 것이고, 다르면 secret 이 어긋난 것이다.
+    tgStat.lastRejectReason = req.headers['x-telegram-bot-api-secret-token']
+      ? 'secret_mismatch' : 'no_secret_header';
+    console.warn(`[tg] 거부 (${tgStat.lastRejectReason}) — 누적 ${tgStat.rejectCount}회`);
+    if (tgStat.lastRejectReason === 'secret_mismatch') {
+      console.warn('[tg] ⚠ 텔레그램이 보낸 secret 이 서버 설정과 다르다. ' +
+        'ops/setup-telegram-webhook.js --apply 로 재등록할 것');
+    }
     return res.sendStatus(403);
   }
+  tgStat.acceptCount++; tgStat.lastCallbackAt = new Date().toISOString();
   // 텔레그램에는 항상 200을 빨리 돌려준다. 실패해도 재전송 폭주를 만들지 않는다.
   res.sendStatus(200);
 

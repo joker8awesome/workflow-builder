@@ -163,6 +163,20 @@ function post(headers, body) {
   check('숫자 아닌 id 무시', true);
   check('callback_query 없는 본문도 200', await post(H, { message: {} }) === 200);
 
+  console.log('\n6) 거부 사유가 구분되는가 (진단용)');
+  // 헤더가 없는 것과 값이 다른 것을 구분해야 원인을 좁힐 수 있다.
+  // 없으면 텔레그램이 아닌 곳에서 온 것이고, 다르면 secret 이 어긋난 것이다.
+  // 이 구분이 없어서 "버튼이 안 눌린다"의 원인을 밖에서 확인할 수 없었다.
+  const fs = require('fs');
+  const srv = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  check('no_secret_header 와 secret_mismatch 를 구분',
+    srv.includes("'secret_mismatch'") && srv.includes("'no_secret_header'"));
+  check('불일치 시 재등록 안내를 로그에 남긴다',
+    srv.includes('setup-telegram-webhook.js --apply'));
+  check('상태 조회 엔드포인트 존재',
+    srv.includes("app.get('/api/telegram/status'"),
+    '봇 토큰 없이 밖에서 진단할 방법이 필요하다');
+
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));
   process.exit(fails.length ? 1 : 0);
 })();

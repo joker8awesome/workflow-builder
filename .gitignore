@@ -10,3 +10,6 @@ claude_desktop_config*.json
 .claude/settings.local.json
 __pycache__/
 ecosystem.config.js
+ops/.queue-trigger*.json
+ops/.trigger-test-marker
+ops/queue-trigger.log

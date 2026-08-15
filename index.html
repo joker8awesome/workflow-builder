@@ -640,7 +640,7 @@
     <strong>커멘드센터</strong>
     <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
-    <span id="sync-status" style="font-size:12px;color:#888"></span>
+    <span id="sync-status" style="font-size:11px;font-weight:700;color:#fff;background:#1a7f37;padding:3px 10px;border-radius:10px;white-space:nowrap;cursor:pointer"></span>
     <input id="wf-search" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:150px">
     <span class="tb-sep"></span>
     <button id="btn-run" class="tb-action" style="background:var(--accent);color:#04100a;font-weight:700">▶ 실행</button>
@@ -1111,13 +1111,16 @@ function updateSyncStatus() {
   if (!el) return;
   if (wfAuthFailed) {
     el.textContent = '🔑 키 필요 (클릭)';
-    el.style.color = '#d29922';
+    el.style.background = '#9a6700';
+    el.style.color = '#fff';
   } else if (serverOnline) {
     el.textContent = getWfKey() ? '서버 연결됨 🔑' : '서버 연결됨';
-    el.style.color = '#1a7f37';
+    el.style.background = '#1a7f37';
+    el.style.color = '#fff';
   } else {
     el.textContent = '로컬 저장';
-    el.style.color = '#888';
+    el.style.background = '#444';
+    el.style.color = '#fff';
   }
   el.style.cursor = 'pointer';
   el.title = '클릭하면 API 키를 입력/변경합니다';

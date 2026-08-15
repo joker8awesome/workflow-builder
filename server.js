@@ -667,14 +667,19 @@ app.get('/api/agents', async (req, res) => {
 });
 app.post('/api/agents', requireAuth, async (req, res) => {
   try {
-    const { id, name, person, role, machine, color } = req.body || {};
+    const { id, name, person, role, machine, color, owner } = req.body || {};
     if (!id) return res.status(400).json({ success: false, error: 'id required' });
+    // owner — 이 에이전트를 담당하는 사람. 팀 도구 전환에서 키 귀속의 기준이 된다.
+    // 이전에는 어떤 API도 owner 를 쓰지 않아 16명 전원 빈 문자열이었다.
+    // 본문에 없으면 null 을 넘기고 COALESCE 로 기존 값을 보존한다 (생략 = 삭제가 되지 않도록).
     await pool.query(
-      `INSERT INTO agents (id, name, person, role, machine, color)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO agents (id, name, person, role, machine, color, owner)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, ''))
        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, person=EXCLUDED.person,
-         role=EXCLUDED.role, machine=EXCLUDED.machine, color=EXCLUDED.color`,
-      [id, name || '', person || '', role || '', JSON.stringify(machine || {}), color || '#00ff87']
+         role=EXCLUDED.role, machine=EXCLUDED.machine, color=EXCLUDED.color,
+         owner=COALESCE($7, agents.owner)`,
+      [id, name || '', person || '', role || '', JSON.stringify(machine || {}), color || '#00ff87',
+       (owner === undefined || owner === null) ? null : String(owner)]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }

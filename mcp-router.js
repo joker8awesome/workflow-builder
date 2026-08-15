@@ -2,6 +2,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { parseScopes } = require('./auth-credential');
 const pool = new Pool(process.env.DATABASE_URL
   ? { connectionString: process.env.DATABASE_URL }
   : { host: process.env.PGHOST || '/opt/data/pgdata',
@@ -37,7 +38,9 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'invalid_credentials', data: { detail: 'API key expired' } }, id: null });
     }
     req.agent_id = rows[0].agent_id;
-    req.scopes = rows[0].scopes || [];
+    // scopes 는 배열이 아니라 Postgres 배열 리터럴 문자열('{"mcp:read",...}')로 온다.
+    // 그대로 두면 아래 스코프 검사의 .includes() 가 부분 문자열 검사가 된다.
+    req.scopes = parseScopes(rows[0].scopes);
     pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(() => {});
     next();
   } catch (e) {

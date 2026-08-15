@@ -836,8 +836,14 @@
       <p class="cred-hint">에이전트 <code id="credAgentId">-</code> 에 대한 새 API 키를 발급합니다.</p>
 
       <label class="cred-field">
-        <span>이름 (구분용)</span>
-        <input type="text" id="credName" placeholder="예: claude-desktop-macbook" value="claude-desktop" />
+        <span>관리자 키 (mcp:admin) <small>— 발급에 필요</small></span>
+        <input type="password" id="credAdminKey" placeholder="wf_ak_... 또는 WF_ACCESS_TOKEN" autocomplete="off" />
+        <small class="cred-hint">이 브라우저에만 저장됩니다. 서버로는 요청 헤더로만 전달됩니다.</small>
+      </label>
+
+      <label class="cred-field">
+        <span>이름 (구분용 · 소유자)</span>
+        <input type="text" id="credName" placeholder="예: 홍길동-노트북" value="claude-desktop" />
       </label>
 
       <fieldset class="cred-field">
@@ -5271,6 +5277,10 @@ async function sendMcpCommand(text) {
     document.getElementById('credExpires').value = '';
     document.getElementById('scopeRead').checked = true;
     document.getElementById('scopeExecute').checked = true;
+    // 관리자 키는 이 브라우저에만 보관 — 소스/서버에 저장하지 않는다
+    try {
+      document.getElementById('credAdminKey').value = localStorage.getItem('wf_admin_key') || '';
+    } catch (e) {}
     document.getElementById('credentialModal').hidden = false;
   }
 
@@ -5295,17 +5305,25 @@ async function sendMcpCommand(text) {
     const days = parseInt(document.getElementById('credExpires').value, 10);
     if (days > 0) body.expires_in_days = days;
 
+    // 자격증명 발급은 mcp:admin 을 요구한다 (이전에는 무인증으로 열려 있었다)
+    const adminKey = (document.getElementById('credAdminKey').value || '').trim();
+    if (!adminKey) { alert('관리자 키(mcp:admin)를 입력하세요.'); return; }
+
     try {
-      const res = await fetch(`/api/agents/${currentCredAgentId}/credentials`, {
+      const res = await fetch(`${API_BASE}/api/agents/${currentCredAgentId}/credentials`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminKey },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (res.status === 401) { alert('관리자 키가 올바르지 않거나 만료되었습니다.'); return; }
+        if (res.status === 403) { alert('이 키에는 mcp:admin 권한이 없습니다.\n필요: ' + (err.required || 'mcp:admin')); return; }
         alert('발급 실패: ' + (err.error || res.statusText));
         return;
       }
+      // 성공한 키만 기억한다
+      try { localStorage.setItem('wf_admin_key', adminKey); } catch (e) {}
       const data = await res.json();
       showIssuedKey(data.key);
     } catch (e) {

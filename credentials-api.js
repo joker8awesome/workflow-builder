@@ -16,17 +16,23 @@
 
 const express = require('express');
 const crypto = require('crypto');
+const { requireScope } = require('./auth-credential');
 
 module.exports = function createCredentialsRouter(db) {
   const router = express.Router();
   router.use(express.json());
+
+  // 자격증명 API 전체에 mcp:admin 요구.
+  // 이전에는 인증이 전혀 없어 누구나 키를 발급·조회·폐기할 수 있었다.
+  // WF_ACCESS_TOKEN 도 허용 — 키를 전부 잃었을 때의 복구 경로.
+  const adminOnly = requireScope(db, 'mcp:admin', { allowAccessToken: true });
 
   /**
    * 새 자격증명 발급
    * body: { name?: string, scopes?: string[], expires_in_days?: number }
    * 응답의 `key` 필드는 이 응답에만 포함되며, 이후 다시 조회 불가.
    */
-  router.post('/api/agents/:id/credentials', async (req, res) => {
+  router.post('/api/agents/:id/credentials', adminOnly, async (req, res) => {
     try {
       const { id: agent_id } = req.params;
       const {
@@ -67,8 +73,10 @@ module.exports = function createCredentialsRouter(db) {
         `INSERT INTO audit_logs (actor, action, resource, created_at)
          VALUES ($1, 'credential.issue', $2, now())`,
         [
-          agent_id,
-          JSON.stringify({ credential_id: rows[0].id, scopes, expires_at: expiresAt }),
+          // actor 는 발급을 요청한 주체다. 이전에는 대상 에이전트를 넣어
+          // "누가 발급했는가"가 기록되지 않았다.
+          req.agent_id || agent_id,
+          JSON.stringify({ credential_id: rows[0].id, target_agent: agent_id, name, scopes, expires_at: expiresAt }),
         ]
       ).catch((e) => console.warn('audit log failed:', e.message));
 
@@ -93,7 +101,7 @@ module.exports = function createCredentialsRouter(db) {
   /**
    * 에이전트의 자격증명 목록 (prefix만, 원문 키 없음)
    */
-  router.get('/api/agents/:id/credentials', async (req, res) => {
+  router.get('/api/agents/:id/credentials', adminOnly, async (req, res) => {
     try {
       const { id: agent_id } = req.params;
       const { rows } = await db.query(
@@ -114,7 +122,7 @@ module.exports = function createCredentialsRouter(db) {
   /**
    * 자격증명 폐기
    */
-  router.delete('/api/agents/:id/credentials/:credId', async (req, res) => {
+  router.delete('/api/agents/:id/credentials/:credId', adminOnly, async (req, res) => {
     try {
       const { id: agent_id, credId } = req.params;
       const { rowCount } = await db.query(
@@ -129,7 +137,7 @@ module.exports = function createCredentialsRouter(db) {
       await db.query(
         `INSERT INTO audit_logs (actor, action, resource, created_at)
          VALUES ($1, 'credential.revoke', $2, now())`,
-        [agent_id, JSON.stringify({ credential_id: credId })]
+        [req.agent_id || agent_id, JSON.stringify({ credential_id: credId, target_agent: agent_id })]
       ).catch(() => {});
       res.json({ revoked: true, credential_id: credId });
     } catch (err) {

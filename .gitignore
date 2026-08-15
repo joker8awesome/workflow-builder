@@ -9,4 +9,4 @@ claude_desktop_config*.json
 .mcp.json
 .claude/settings.local.json
 __pycache__/
-ops/poll-queue.log
+ecosystem.config.js

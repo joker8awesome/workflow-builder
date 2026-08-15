@@ -1485,6 +1485,7 @@ function renderPalette() {
 let panMode = false, panStart2 = null;
 // 마퀴 선택 — 캔버스 빈 곳 드래그로 다중 선택
 let marquee = null;
+let marqueeActive = false;
 function setupMarquee() {
   const cw = document.getElementById('canvas-wrap');
   if (!cw || cw.dataset.mqReady) return;
@@ -1493,12 +1494,18 @@ function setupMarquee() {
     if (e.target.closest('.node') || e.target.closest('.nport') || e.target.closest('#edges')) return;
     if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
     marquee = { x: e.clientX, y: e.clientY };
+    marqueeActive = false;
   });
   window.addEventListener('mousemove', (e) => {
     if (!marquee) return;
+    const dx = e.clientX - marquee.x, dy = e.clientY - marquee.y;
+    if (!marqueeActive) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      marqueeActive = true;
+    }
     const el = document.getElementById('marquee-box');
     const x = Math.min(marquee.x, e.clientX), y = Math.min(marquee.y, e.clientY);
-    const w = Math.abs(e.clientX - marquee.x), h = Math.abs(e.clientY - marquee.y);
+    const w = Math.abs(dx), h = Math.abs(dy);
     if (!el) {
       const d = document.createElement('div');
       d.id = 'marquee-box';
@@ -1514,7 +1521,8 @@ function setupMarquee() {
     const bx = parseFloat(box.style.left), by = parseFloat(box.style.top);
     const bw = parseFloat(box.style.width), bh = parseFloat(box.style.height);
     box.remove();
-    if (bw < 5 || bh < 5) { marquee = null; return; }
+    if (!marqueeActive) { marquee = null; return; }
+    if (bw < 8 || bh < 8) { marquee = null; return; }
     // 노드와 겹치는지 판정
     const wf = currentWorkflow();
     const canvas = document.getElementById('canvas');

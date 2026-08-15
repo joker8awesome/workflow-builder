@@ -220,4 +220,7 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | scheduler.py 최신 코드로 재시작 (옛 코드 8/13 시작이었음) — [큐] 미처리 감지 정상 | ✅ |
 | 2026-08-15 | msg 158 (센터장→할매봇, trace_handoff9) 완료 처리 | ✅ |
 | 2026-08-15 | 작업 자동 전달 루틴 구축 — send_to_center.py, 작업 후 센터장에게 report 전송 | ✅ |
+| 2026-08-15 | 지시서#10: 알림 스팸 차단 — npm test 9스위트 128건, scheduler 재시작(큐 감시 기준 시각), 스팸 재발 0건 | ✅ |
+| 2026-08-15 | 지시서#10: 보고 경로 복구 — list_pending types 파라미터로 report 조회 성공(msg 161) | ✅ |
+| 2026-08-15 | 지시서#10: 정리 — 스팸 승인 8~14 rejected, 죽은 큐 메시지 7건 cancelled | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |

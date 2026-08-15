@@ -229,5 +229,6 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서#14: 커멘드센터 전용 봇 전환 — 새 토큰/chat_id, 웹훅 등록, 버튼 콜백 수신(acceptCount 1, id24 approved) | ✅ |
 | 2026-08-15 | 지시서#15: 큐 정리(163·164·165·167·168 completed), 배포(135건), 웹훅 유지(true), 스키마 덤프 20테이블, 기동방식 답변 | ✅ |
 | 2026-08-15 | 지시서#16: 자동 픽업 — WF_GATEWAY_TOKEN(게이트웨이 봇) 설정, pm2+scheduler 재시작, wake 테스트 woken=true | ✅ |
+| 2026-08-15 | 지시서#19: 자동 픽업 배포 — npm test 157건, Hermes cron 등록(시스템 cron 데몬 없음), wrapper 경로 수정, hermes -z 실동작 확인(자동 #17 수행, claim 3건, 커밋 58aaa25) | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |
 | 2026-08-15 | 지시서#17: 자동 픽업 검증 — 사람 개입 없이 지시 수신·수행 (ops/.queue-trigger.json 읽고 git pull 후 지시서 수행) | ✅ 완료 |

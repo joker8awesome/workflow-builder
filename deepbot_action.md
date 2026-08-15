@@ -240,3 +240,5 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | ops/queue-trigger.sh 자기-exec 무한루프 발견·복원 — d3e3d9a에서 진짜 스크립트가 자기 경로를 exec하는 3줄 스텁으로 덮임. 검증된 픽업(58aaa25) 69초 뒤 발생, 이후 msg_176 정체 (원인 확정은 VPS 확인 필요) | ✅ 복원 |
 | 2026-08-16 | 재발 방지 — ops/queue-trigger-wrapper.sh.example(저장소 밖 복사용) 분리, exec 전 queue-trigger.log 기록 추가, 테스트 3건(자기exec 금지·ROOT 블록·로그) 11스위트 166건 (12140c4) | ✅ |
 | 2026-08-16 | 지시서#21 작성 — 큐로 전달 불가(큐 자체가 막힘), 사람이 직접 전달. STEP1 증거 확보 후 복구 순서 | 대기 |
+| 2026-08-16 | 할매봇 #21 중간보고 반영 — 스텁 자기-exec은 pull로 이미 해소(무한루프 프로세스 없음), Hermes cron 실경로는 /opt/data/scripts/queue-trigger.sh(저장소 밖 래퍼)로 확인 | 확인 |
+| 2026-08-16 | 기동 실패 시 지시 유실 수정 — seen을 기동 전 저장하던 것을 시도 횟수(tries)로 대체. 성공해야 seen, 실패는 MAX_TRIES(3)까지 재시도 후 포기+경고. msg_176이 이 경로로 묻혔던 건 (fb1ab65) | ✅ |

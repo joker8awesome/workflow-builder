@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+/**
+ * agent_messages 상태 어휘 검증.
+ *
+ * 이 프로젝트에는 메시지 상태 어휘가 **두 벌** 있다:
+ *
+ *   큐(픽업) 경로 : pending → claimed → completed
+ *     agent.tasks.list_pending / claim, send_to_center.py, 텔레그램 지시 적재
+ *
+ *   오케스트레이터 : sent → read
+ *     agent_orchestrator.py 가 워크플로우 실행 중 주고받는 메시지
+ *
+ * 둘은 섞이지 않는다. 오케스트레이터가 보낸 메시지는 list_pending 에 잡히지 않는다.
+ * 이건 의도된 분리이되, **모르면 사고가 난다** — 실제로 POST /api/messages 가
+ * 'sent' 로 넣는 바람에 그 API 로 보낸 메시지는 아무도 받지 못했다.
+ *
+ * 실행: node ops/test-message-status.js
+ */
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const SRV = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+const MCP = fs.readFileSync(path.join(ROOT, 'mcp-router.js'), 'utf8');
+
+let fails = [];
+function check(name, cond, detail) {
+  console.log((cond ? '  PASS  ' : '  FAIL  ') + name + (!cond && detail ? '\n         ' + detail : ''));
+  if (!cond) fails.push(name);
+}
+
+console.log('1) 픽업 경로가 같은 값을 쓰는가');
+check('list_pending 은 pending 을 조회',
+  /msg_type = ANY\(\$3\) AND status = 'pending'/.test(MCP));
+check('claim 은 pending → claimed',
+  /SET status = 'claimed'[\s\S]{0,120}status = 'pending'/.test(MCP));
+
+console.log('\n2) 메시지를 만드는 곳이 pending 으로 넣는가');
+// 여기가 어긋나면 "보냈는데 아무도 못 받는" 상태가 된다
+check('agent.send_message 가 pending',
+  /INSERT INTO agent_messages[\s\S]{0,300}'pending'/.test(MCP),
+  'MCP 로 보낸 지시가 픽업되지 않는다');
+check('POST /api/messages 기본값이 pending',
+  /\|\| 'command', from_agent, to_agent, session_id \|\| '', JSON\.stringify\(payload \|\| \{\}\), st\]/.test(SRV)
+  && /includes\(status\)\s*\n?\s*\? status : 'pending'/.test(SRV),
+  "이 API 가 'sent' 로 넣으면 list_pending 에 영영 안 보인다 (실제로 그랬다)");
+check('텔레그램 지시 적재가 pending',
+  /'instruction', \$1, 'ag_claude_desktop', \$2, 'pending'/.test(SRV),
+  '사용자가 봇에 보낸 지시가 전달되지 않는다');
+
+console.log('\n3) 오케스트레이터 어휘는 분리돼 있음을 확인 (의도된 것)');
+const ORCH = fs.existsSync(path.join(ROOT, 'agent_orchestrator.py'))
+  ? fs.readFileSync(path.join(ROOT, 'agent_orchestrator.py'), 'utf8') : '';
+check('오케스트레이터는 sent/read 를 쓴다',
+  /'sent'/.test(ORCH) && /status='read'/.test(ORCH),
+  '어휘가 바뀌었다면 poll_inbox 와 함께 확인할 것');
+console.log('         ⚠ 오케스트레이터가 보낸 메시지는 list_pending 에 잡히지 않는다.');
+console.log('           픽업이 필요한 지시는 pending 으로 넣어야 한다.');
+
+console.log('\n' + (fails.length
+  ? `실패 ${fails.length}건: ${fails.join(', ')}`
+  : '전부 통과'));
+process.exit(fails.length ? 1 : 0);

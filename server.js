@@ -844,6 +844,82 @@ const tgStat = {
   acceptCount: 0,
 };
 
+/**
+ * 사용자가 커멘드센터 봇에 보낸 텍스트를 처리한다.
+ *
+ * 이전에는 버튼(callback_query)만 받아서 한 방향이었다 — 알림은 오는데
+ * 사용자가 말을 걸 수는 없었다. 이제 조회 명령과 지시 전달이 가능하다.
+ *
+ * 지시는 여기서 직접 실행하지 않고 **큐에 넣는다.**
+ * 서버가 판단·실행까지 하면 승인 게이트를 우회하게 되고, 텔레그램 한 줄로
+ * 프로덕션이 바뀔 수 있다. 큐에 넣으면 기존 경로(감지→알림→승인→수행)를 그대로 탄다.
+ */
+async function handleUserMessage(msg) {
+  const allowed = String(process.env.WF_TELEGRAM_CHAT_ID || '');
+  const from = String(msg.chat?.id ?? '');
+  if (allowed && from !== allowed) {
+    console.warn(`[tg] 허용되지 않은 채팅 ${from} — 메시지 무시`);
+    return;
+  }
+  // 봇이 보낸 메시지는 무시한다 — 봇끼리 오가며 무한 루프가 되는 것을 막는다
+  if (msg.from?.is_bot) return;
+
+  const text = String(msg.text || '').trim();
+  if (!text) return;
+  const who = msg.from?.username ? '@' + msg.from.username : (msg.from?.first_name || 'user');
+  console.log(`[tg] 사용자 메시지 (${who}): ${text.slice(0, 80)}`);
+
+  const send = t => notify.send(t);
+
+  // --- 조회 명령: 읽기만 하므로 바로 답한다 ---
+  if (text === '/help' || text === '도움말') {
+    return send(notify.esc(
+      '커멘드센터\n\n' +
+      '/status  시스템 상태\n' +
+      '/queue   대기 중인 지시·승인\n' +
+      '/help    이 도움말\n\n' +
+      '그 밖의 문장은 센터장에게 지시로 전달됩니다.'));
+  }
+
+  if (text === '/status' || text === '상태') {
+    const [wf, ag, ap] = await Promise.all([
+      pool.query('SELECT count(*)::int n FROM wf_workflows'),
+      pool.query('SELECT count(*)::int n FROM agents'),
+      pool.query("SELECT count(*)::int n FROM wf_approvals WHERE decision='pending'"),
+    ]);
+    const g = approvalGate.describe();
+    return send(notify.esc(
+      `상태\n\n워크플로우 ${wf.rows[0].n} · 에이전트 ${ag.rows[0].n}\n` +
+      `승인 대기 ${ap.rows[0].n}\n` +
+      `승인 필요 작업: ${g.required.join(', ') || '(없음)'}\n` +
+      `웹훅 ${tgStat.webhookUrl ? '등록됨' : '미등록'} · 콜백 ${tgStat.acceptCount}건`));
+  }
+
+  if (text === '/queue' || text === '큐') {
+    const { rows } = await pool.query(
+      `SELECT id, from_agent, to_agent, msg_type, trace_id FROM agent_messages
+        WHERE status='pending' ORDER BY id DESC LIMIT 10`);
+    const body = rows.length
+      ? rows.map(r => `${r.id} ${r.from_agent}→${r.to_agent} (${r.msg_type})`).join('\n')
+      : '대기 중인 지시 없음';
+    return send(notify.esc('큐\n\n' + body));
+  }
+
+  // --- 그 밖의 문장: 센터장 앞으로 큐에 넣는다 ---
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
+       VALUES ('instruction', $1, 'ag_claude_desktop', $2, 'pending', $3) RETURNING id`,
+      [`telegram:${who}`, JSON.stringify({ text, from: who, via: 'telegram' }),
+       'trace_tg_' + Date.now().toString(36)]);
+    await send(notify.esc(`전달했습니다 (msg ${rows[0].id})\n센터장이 확인하면 보고가 옵니다.`));
+    console.log(`[tg] 지시 큐 적재: msg ${rows[0].id}`);
+  } catch (e) {
+    console.warn('[tg] 지시 적재 실패:', e.message);
+    await send(notify.esc('전달하지 못했습니다: ' + e.message));
+  }
+}
+
 // 웹훅 등록 상태를 텔레그램에 직접 물어본다.
 async function checkWebhookAlive() {
   if (!notify.enabled()) return;
@@ -893,6 +969,12 @@ app.post('/api/telegram/webhook', async (req, res) => {
   res.sendStatus(200);
 
   try {
+    // 사용자가 봇에 보낸 텍스트 — 양방향 대화·트리거용
+    if (req.body && req.body.message) {
+      await handleUserMessage(req.body.message);
+      return;
+    }
+
     const cq = req.body && req.body.callback_query;
     if (!cq) return;
 
@@ -1037,12 +1119,18 @@ app.get('/api/messages', async (req, res) => {
 });
 app.post('/api/messages', maybeAuth('mcp:execute'), async (req, res) => {
   try {
-    const { msg_type, from_agent, to_agent, session_id, payload } = req.body || {};
+    const { msg_type, from_agent, to_agent, session_id, payload, status } = req.body || {};
     if (!from_agent || !to_agent) return res.status(400).json({ success: false, error: 'from/to required' });
+    // 기본값은 'pending' 이어야 한다.
+    // 이전에는 'sent' 로 넣었는데 agent.tasks.list_pending 은 'pending' 만 조회하므로,
+    // 이 API 로 만든 메시지는 픽업 경로에서 영영 보이지 않았다 — 보내도 아무도 못 받는다.
+    // 수신 대기 상태를 뜻하는 값은 'pending' 하나로 통일한다.
+    const st = ['pending', 'sent', 'claimed', 'read', 'completed', 'cancelled'].includes(status)
+      ? status : 'pending';
     const { rows } = await pool.query(
       `INSERT INTO agent_messages (msg_type, from_agent, to_agent, session_id, payload, status)
-       VALUES ($1,$2,$3,$4,$5,'sent') RETURNING id`,
-      [msg_type || 'command', from_agent, to_agent, session_id || '', JSON.stringify(payload || {})]
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [msg_type || 'command', from_agent, to_agent, session_id || '', JSON.stringify(payload || {}), st]
     );
     res.json({ success: true, id: rows[0].id });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }

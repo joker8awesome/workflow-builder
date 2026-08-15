@@ -89,6 +89,62 @@ async function main() {
 
   if (!tasks.length) process.exit(1);
 
+  // 보고(report)와 지시(command/instruction)는 다르게 다룬다.
+  // 보고는 읽고 기록하면 끝이지만, 지시는 실제로 무언가를 해야 한다.
+  // 둘을 같이 취급하면 보고를 받을 때마다 세션이 떠서 낭비가 된다.
+  const reports = tasks.filter(t => t.type === 'report');
+  const actionable = tasks.filter(t => t.type !== 'report');
+
+  // --- 보고: 수신함에 적고 claim 한다 (세션 불필요) ---
+  if (reports.length) {
+    const inbox = path.join(ROOT, 'ops', 'inbox.md');
+    const lines = [];
+    // 본문은 agent_messages.payload 에 들어 있다.
+    // list_pending 은 payload_ref 만 돌려주고, send_to_center.py 는 payload 를 쓰므로
+    // MCP 만으로는 내용을 읽을 수 없다 — REST 로 한 번 받아 id→payload 로 맞춘다.
+    const bodies = new Map();
+    try {
+      const rest = (process.env.WF_API_BASE || 'https://187.127.124.16.sslip.io') + '/api/messages';
+      const rr = await fetch(rest, {
+        headers: { Authorization: 'Bearer ' + key }, signal: AbortSignal.timeout(20000),
+      });
+      if (rr.ok) {
+        const j = await rr.json();
+        for (const m of (j.messages || j)) {
+          if (m && m.payload != null) bodies.set('msg_' + m.id, m.payload);
+        }
+      }
+    } catch (e) { log('본문 조회 실패: ' + e.message); }
+
+    for (const t of reports) {
+      let body = '';
+      const raw = bodies.get(t.message_id);
+      if (raw != null) {
+        const obj = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch (e) { return raw; } })() : raw;
+        body = typeof obj === 'object'
+          ? Object.entries(obj).map(([k, v]) => `- ${k}: ${String(v).slice(0, 400)}`).join('\n')
+          : String(obj).slice(0, 500);
+      } else {
+        body = '(본문을 찾지 못했다)';
+      }
+      lines.push(`\n## ${new Date().toISOString()} · ${t.message_id} · ${t.from_agent}\n` +
+        `trace: ${t.trace_id || '-'}\n\n${body}\n`);
+      // claim 하지 않으면 큐에 계속 남아 매번 다시 읽는다
+      try { await callTool(key, 'agent.tasks.claim', { message_id: t.message_id }); }
+      catch (e) { log(`claim 실패 ${t.message_id}: ${e.message}`); }
+    }
+    try {
+      fs.appendFileSync(inbox, lines.join(''));
+      log(`보고 ${reports.length}건 → ops/inbox.md`);
+    } catch (e) { log('수신함 기록 실패: ' + e.message); }
+  }
+
+  if (!actionable.length) {
+    log('처리할 지시는 없음 (보고만 수신)');
+    process.exit(0);
+  }
+  tasks = actionable;
+
   if (RUN) {
     // 세션을 띄워 처리를 맡긴다.
     // 지시 본문은 payload_ref 로만 오므로, 세션이 직접 해석하도록 최소 프롬프트만 준다.

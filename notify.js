@@ -190,7 +190,8 @@ function setWebhook(url, secret) {
   return tg('setWebhook', {
     url,
     secret_token: secret,
-    allowed_updates: ['callback_query'],
+    // message 도 받아야 사용자가 봇에 말을 걸 수 있다 (조회 명령·지시 전달)
+    allowed_updates: ['callback_query', 'message'],
     drop_pending_updates: true,
   });
 }

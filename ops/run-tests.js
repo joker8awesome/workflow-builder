@@ -32,6 +32,7 @@ const SUITES = [
   { name: '라우트 인증 (route-auth)', file: 'ops/test-route-auth.js', runner: 'node', expect: 5 },
   { name: '스케줄러 큐 필터 (scheduler-queue)', file: 'ops/test-scheduler-queue.py', runner: 'python', expect: 12 },
   { name: '큐 트리거 (queue-trigger)', file: 'ops/test-queue-trigger.js', runner: 'node', expect: 18 },
+  { name: '메시지 상태 어휘 (message-status)', file: 'ops/test-message-status.js', runner: 'node', expect: 6 },
 ];
 
 function findPython() {

@@ -17,10 +17,66 @@ from datetime import datetime
 
 import psycopg2
 
-DB_DSN = "host=/opt/data/pgdata dbname=odds user=hermes"
+# server.js / mcp-router.js 와 동일 규칙 — 미설정 시 VPS 기본값 유지
+DB_DSN = os.environ.get("DATABASE_URL") or (
+    "host=%s dbname=%s user=%s" % (
+        os.environ.get("PGHOST", "/opt/data/pgdata"),
+        os.environ.get("PGDATABASE", "odds"),
+        os.environ.get("PGUSER", "hermes"),
+    )
+)
+
+# agent_sessions.status 어휘 — online/active_sessions 판정의 단일 기준.
+# mcp-router.js 의 agent.list, server.js 의 /api/team/status 와 반드시 일치해야 한다.
+#   활성: running(실행 중) / working(작업 중) / waiting(대기 중)
+#   종료: done(성공) / failed(실패) / idle(미시작)
+ACTIVE_STATUSES = ("running", "working", "waiting")
 
 def db():
     return psycopg2.connect(DB_DSN)
+
+def set_session_status(session_id, status):
+    """agent_sessions.status 갱신.
+
+    이 함수가 활성 상태를 기록하는 유일한 경로다. 이전에는 어디서도 'running'을
+    쓰지 않아 online/active_sessions 가 영구 0이었다.
+    실패해도 워크플로우 실행 자체는 막지 않되, 조용히 넘기지는 않는다.
+    """
+    if not session_id or session_id == "-":
+        return
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE agent_sessions SET status=%s, updated_at=now() WHERE id=%s",
+            (status, session_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"  [warn] 세션 상태 갱신 실패 {session_id} -> {status}: {e}")
+
+def reset_stale_sessions(wf_id):
+    """이 워크플로우의 활성 상태로 남은 세션을 정리.
+
+    프로세스가 중간에 죽으면 status가 'running'에 고착되어 online이 영구 true가 된다.
+    (고치려던 버그의 정반대 증상) 실행 시작과 종료 시점에 쓸어낸다.
+    """
+    try:
+        conn = db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE agent_sessions SET status='idle', updated_at=now() "
+            "WHERE wf_id=%s AND status = ANY(%s)",
+            (wf_id, list(ACTIVE_STATUSES)),
+        )
+        n = cur.rowcount
+        conn.commit()
+        conn.close()
+        if n:
+            print(f"  [정리] 활성 상태로 남아 있던 세션 {n}개를 idle로 되돌림")
+    except Exception as e:
+        print(f"  [warn] 잔여 세션 정리 실패: {e}")
 
 def now():
     return datetime.utcnow().isoformat()
@@ -249,6 +305,8 @@ def run_workflow(wf_id, dry=False):
         save_run_snapshot(wf_id, 'wf', 'start', {'nodes': len(_snap_data.get('nodes', [])), 'edges': len(_snap_data.get('edges', [])), 'ts': now()})
     except Exception:
         pass
+    # 이전 실행이 비정상 종료돼 활성으로 남은 세션 정리
+    reset_stale_sessions(wf_id)
     sessions = create_sessions(wf)
     print(f"에이전트 세션 {len(sessions)}개 생성")
 
@@ -296,9 +354,10 @@ def run_workflow(wf_id, dry=False):
             ctx[node_id] = _memo[memo_key]
             return None
 
-        # 체크포인트 — 실행 전 기록
+        # 체크포인트 — 실행 전 기록 + 세션을 활성(running)으로 전환
         if session:
             checkpoint(sess_id, wf_id, node_id, "running", {"label": node.get("label", "")})
+            set_session_status(sess_id, "running")
 
         # Supervisor 노드: 작업 분해 → 하위 노드 병렬 실행 (fan-out/fan-in)
         # 실행 결과 메모이즈 — execute_node 후 저장
@@ -337,7 +396,14 @@ def run_workflow(wf_id, dry=False):
                 )
                 print(f"  명령: {prev_agent} → {agent_id} ({node.get('label','')}) [ref:{ref}]")
 
-        result, next_id = execute_node(node, ctx, session or {"session_id": "-"})
+        # 실행 중 예외가 나도 세션이 running에 고착되지 않도록 보장한다
+        try:
+            result, next_id = execute_node(node, ctx, session or {"session_id": "-"})
+        except Exception:
+            if session:
+                set_session_status(sess_id, "failed")
+                checkpoint(sess_id, wf_id, node_id, "failed", {"error": "execute_node 예외"})
+            raise
         # 실행 결과 메모이즈
         if result and result.get("ok"):
             _memo[(wf_id, node_id)] = result
@@ -347,9 +413,11 @@ def run_workflow(wf_id, dry=False):
         add_span(trace_id, parent_trace or trace_id, sess_id, node_id, agent_id or "",
                  node.get("label", ""), dur_ms, {"ok": result.get("ok"), "output": (result.get("output") or "")[:200]})
 
-        # 체크포인트 — 실행 후
+        # 체크포인트 — 실행 후 + 세션을 종료 상태로 전환 (활성에서 빠짐)
         if session:
-            checkpoint(sess_id, wf_id, node_id, "done" if result.get("ok") else "failed", result)
+            _final = "done" if result.get("ok") else "failed"
+            checkpoint(sess_id, wf_id, node_id, _final, result)
+            set_session_status(sess_id, _final)
 
         # 보고 (trace 상속)
         for pe in prev_edges:
@@ -367,7 +435,12 @@ def run_workflow(wf_id, dry=False):
             visit(next_id, parent_trace=trace_id, depth=depth + 1)
         return result
 
-    visit(start["id"])
+    try:
+        visit(start["id"])
+    finally:
+        # 정상/비정상 종료 무관하게 활성 잔여 세션을 반드시 정리한다.
+        # 이게 없으면 중단된 실행이 online=true를 영구히 남긴다.
+        reset_stale_sessions(wf_id)
     print(f"=== 완료: {len(report_chain)}개 노드 실행 (trace: {trace_id}) ===")
     return sessions
 

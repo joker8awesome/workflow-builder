@@ -210,4 +210,8 @@ agent.payload.get / report / checkpoint
 |------|------|------|
 | 2026-08-15 | 지시서#4: rollback 게이트 + 웹훅 — 테스트 3종 통과, env 설정, 웹훅 등록, 버튼 승인 확인(id6→approved @hanwoo79), 정리 완료 | ✅ |
 | 2026-08-15 | 딥시크 워커 편성 — ag_deepseek 등록, /api/llm/worker(deepseek-v4-flash), TEAM_ROUTES 추가(16명), 규칙 문서화 | ✅ |
+| 2026-08-15 | 지시서#8: UI 4건 수정 배포 (대비/스크롤/패널오류) — npm test 120건 통과 | ✅ |
+| 2026-08-15 | 지시서#7: PHASE A 배포 완료(플래그 꺼짐), B 사용자 키 발급+서버 URL 접속 확인 | ✅ |
+| 2026-08-15 | 지시서#7: PHASE C WF_REQUIRE_AUTH_ALL=1 켬, D 검증 — LLM 라우트 401/키 400/스케줄러 정상 | ✅ |
+| 2026-08-15 | 워크플로우 정리 — wf_server1만 남기고 38개 삭제 | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |

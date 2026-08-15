@@ -56,6 +56,8 @@ app.use(express.json({ limit: '10mb' }));
 // 폴백 로그 API
 app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallbackLog }));
 
+const notify = require('./notify');
+const approvalGate = require('./approval-gate');
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool(process.env.DATABASE_URL
   ? { connectionString: process.env.DATABASE_URL }
@@ -694,7 +696,7 @@ app.delete('/api/agents/:id', requireAuth, async (req, res) => {
 // === 승인 감사 API (Strong HITL) ===
 app.post('/api/approvals', async (req, res) => {
   try {
-    const { wf_id, node_id, agent_id, approver, decision, checklist, context } = req.body || {};
+    const { wf_id, node_id, agent_id, approver, decision, checklist, context, action } = req.body || {};
     if (!wf_id) return res.status(400).json({ success: false, error: 'wf_id required' });
     const { rows } = await pool.query(
       `INSERT INTO wf_approvals (wf_id, node_id, agent_id, approver, decision, checklist, context, decided_at)
@@ -702,8 +704,54 @@ app.post('/api/approvals', async (req, res) => {
       [wf_id, node_id || '', agent_id || '', approver || 'system', decision || 'pending',
        JSON.stringify(checklist || {}), context || '']
     );
-    res.json({ success: true, id: rows[0].id });
+    // 승인 대기 건은 사용자에게 실제로 전달한다.
+    // 이전에는 여기서 기록만 하고 아무에게도 알리지 않아, 사용자가 직접
+    // 조회하지 않는 한 승인 요청이 있다는 사실조차 알 수 없었다.
+    let notified = null;
+    if ((decision || 'pending') === 'pending') {
+      notified = await notify.approvalRequest({
+        id: rows[0].id,
+        action: action || 'unknown',
+        detail: context || '',
+        requester: agent_id || approver || '-',
+        wf_id,
+      });
+    }
+    res.json({ success: true, id: rows[0].id, notified: notified ? notified.sent : null });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// 승인 결정 기록 — 텔레그램 버튼/웹 UI 양쪽에서 쓴다
+app.post('/api/approvals/:id/decide', requireAuth, async (req, res) => {
+  try {
+    const { decision, approver } = req.body || {};
+    if (!['approved', 'rejected'].includes(decision)) {
+      return res.status(400).json({ success: false, error: "decision must be 'approved' or 'rejected'" });
+    }
+    const { rowCount } = await pool.query(
+      `UPDATE wf_approvals SET decision=$1, approver=$2, decided_at=now()
+       WHERE id=$3 AND decision='pending'`,
+      [decision, approver || 'user', req.params.id]
+    );
+    if (!rowCount) return res.status(404).json({ success: false, error: 'not_found_or_already_decided' });
+    res.json({ success: true, id: req.params.id, decision });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// 대기 중인 승인만 — 에이전트가 진행 가능 여부를 판단할 때 쓴다
+app.get('/api/approvals/pending', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, wf_id, node_id, agent_id, context, created_at
+       FROM wf_approvals WHERE decision='pending' ORDER BY created_at ASC LIMIT 100`
+    );
+    res.json({ success: true, pending: rows });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// 승인 게이트 설정 조회 — 무엇이 자동 통과인지 확인용
+app.get('/api/approvals/config', (req, res) => {
+  res.json({ success: true, ...approvalGate.describe(), notify_enabled: notify.enabled() });
 });
 app.get('/api/approvals', async (req, res) => {
   try {
@@ -1465,6 +1513,8 @@ ${WF_SCHEMA_EXAMPLE}`;
 });
 
 server.listen(PORT, () => {
+  approvalGate.logConfig();
+  if (!notify.enabled()) console.warn('[notify] 텔레그램 미설정 — 승인 요청이 사용자에게 전달되지 않는다');
   console.log(`워크플로우 빌더 서버: http://localhost:${PORT}`);
 });
 

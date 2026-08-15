@@ -648,14 +648,14 @@
     <button id="btn-run" class="tb-action" style="background:var(--accent);color:#04100a;font-weight:700">▶ 실행</button>
     <button id="btn-ai" class="tb-action">✨ AI</button>
     <span class="tb-sep"></span>
-    <button id="btn-agents" class="tb-action">팀</button>
+    <button id="btn-agents" class="tb-action" aria-label="에이전트 목록">에이전트</button>
     <button id="btn-share" class="tb-action">공유</button>
     <button id="btn-export" class="tb-action">내보내기</button>
     <span class="tb-sep"></span>
     <button id="btn-stats" class="tb-action">통계</button>
     <button id="btn-feedback" class="tb-action">의견</button>
     <button id="btn-mcp" class="tb-action" style="color:#ffffff;border-color:rgba(0,255,135,.3);font-weight:700">🤖 MCP</button>
-    <button id="btn-team" class="tb-action">🤝 팀</button>
+    <button id="btn-team" class="tb-action" aria-label="팀 현황 대시보드">🤝 팀 현황</button>
     <div style="position:relative" id="more-wrap">
       <span id="sync-status" style="font-size:11px;font-weight:700;color:#fff;background:#1a7f37;padding:3px 10px;border-radius:10px;white-space:nowrap;cursor:pointer"></span>
       <button id="btn-more" class="tb-action">⋯ 더보기 ▾</button>
@@ -1057,6 +1057,18 @@ async function checkServer() {
   } catch (e) { serverOnline = false; }
   updateSyncStatus();
   return serverOnline;
+}
+
+// 패널 열고 닫기 — 인라인 style 이 아니라 실제 표시 상태를 본다.
+// 이전에는 el.style.display 만 비교해서, 인라인 값이 없는 요소(CSS 클래스나
+// 스타일시트로 숨긴 경우)는 첫 클릭이 반대로 동작했다 — 열려 있는 걸 닫아버렸다.
+// 지금은 모든 패널에 인라인 display:none 이 있어 드러나지 않았을 뿐이다.
+// @returns {boolean} 이번 호출로 열렸으면 true
+function togglePanel(el) {
+  if (!el) return false;
+  const willOpen = getComputedStyle(el).display === 'none';
+  el.style.display = willOpen ? 'block' : 'none';
+  return willOpen;
 }
 
 // 패널 오류 문구 — 원인을 알려준다.
@@ -2633,7 +2645,7 @@ document.getElementById('btn-align').addEventListener('click', autoAlign);
 document.getElementById('btn-template').addEventListener('click', () => {
   loadExamples();
   const p = document.getElementById('template-panel');
-  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  togglePanel(p);
 });
 document.getElementById('btn-share').addEventListener('click', shareWorkflow);
 document.getElementById('btn-version').addEventListener('click', showVersions);
@@ -3624,7 +3636,7 @@ document.getElementById('m-btn-stats').addEventListener('click', showStats);
 document.getElementById('m-btn-more').addEventListener('click', (e) => {
   e.stopPropagation();
   const menu = document.getElementById('mobile-menu');
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  togglePanel(menu);
 });
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#mobile-menu') && !e.target.closest('#m-btn-more')) {
@@ -4067,8 +4079,7 @@ function initCommandPalette() {
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault();
-      pal.style.display = pal.style.display === 'none' ? 'block' : 'none';
-      if (pal.style.display !== 'none') input.focus();
+      if (togglePanel(pal)) input.focus();
     }
     if (e.key === 'Escape') pal.style.display = 'none';
   });
@@ -4332,8 +4343,7 @@ function renderAgents() {
 // 에이전트 탭 토글
 function toggleAgentsPanel() {
   const panel = document.getElementById('agents-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') renderAgents();
+  if (togglePanel(panel)) renderAgents();
 }
 
 // ═══ 에이전트 협업 고도화 모듈 ═══
@@ -4607,8 +4617,7 @@ async function renderSessionPanel() {
 }
 function toggleSessionPanel() {
   const panel = document.getElementById('session-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') renderSessionPanel();
+  if (togglePanel(panel)) renderSessionPanel();
 }
 // 세션 실행 — 파이썬 오케스트레이터 호출 (웹에서 직접 실행은 불가, 서버 exec로)
 async function runAgentSessions() {
@@ -4723,8 +4732,7 @@ function renderFeed() {
 }
 async function toggleFeed() {
   const panel = document.getElementById('feed-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') { await loadFeed(); renderFeed(); }
+  if (togglePanel(panel)) { await loadFeed(); renderFeed(); }
 }
 // WS로 실시간 이벤트 수신 (기존 ws 메시지에 통합 — feed 갱신)
 
@@ -4864,8 +4872,7 @@ async function runRegressionGate() {
 }
 function toggleTestPanel() {
   const panel = document.getElementById('test-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') renderTests();
+  if (togglePanel(panel)) renderTests();
 }
 
 // 4. 단축키 도움말 패널
@@ -5101,7 +5108,7 @@ if (btnMore) btnMore.addEventListener('click', (e) => {
   try {
     buildMoreMenu();
   } catch (err) { console.warn('buildMoreMenu', err); }
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  togglePanel(menu);
 });
 // 더보기 외부 클릭 시 메뉴 닫기 (안전)
 document.addEventListener('click', (e) => {
@@ -5278,8 +5285,7 @@ function mcpLog(msg) {
 function toggleMcpPanel() {
   const panel = document.getElementById('mcp-panel');
   if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') refreshMCPStatus();
+  if (togglePanel(panel)) refreshMCPStatus();
 }
 async function refreshMCPStatus() {
   const el = document.getElementById('mcp-status');
@@ -5340,8 +5346,7 @@ async function bootstrapTeam() {
 function toggleTeamPanel() {
   const panel = document.getElementById('team-panel');
   if (!panel) return;
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') loadTeamStatus();
+  if (togglePanel(panel)) loadTeamStatus();
 }
 async function sendMcpCommand(text) {
   if (!text.trim()) return;

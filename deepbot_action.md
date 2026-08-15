@@ -161,6 +161,11 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 브랜치 `fix/agent-list-and-db-pool` 푸시 (`75cd44a`) — 이제 Hermes가 `git pull` 가능 | ✅ 완료 |
 | 2026-08-15 | main(`06acf07`)과 대조 — `mcp-router.js`는 **주석 차이뿐, 코드 동일** (충돌 없음) | ✅ 확인 |
 | 2026-08-15 | **main 머지 완료** (`f0894a3`) — `mcp-router.js` 충돌은 main 버전 채택(코드 동일, 주석만 상이) | ✅ 완료 |
+| 2026-08-15 | 프론트엔드 검토 리포트 (`2026-08-15-frontend-review.md`) — 배포본 실측 + 소스 대조 | ✅ 완료 |
+| 2026-08-15 | 방향 결정: **팀 도구** (공개 읽기전용 아님) + 키 귀속은 **owner 컬럼** 방식 | ✅ 사용자 결정 |
+| 2026-08-15 | 🔴 **자격증명 API 무인증 노출 발견** — GET이 헤더 없이 200, 발급·폐기도 동일 | ⚠️ 발견 |
+| 2026-08-15 | P0 구현 — `auth-credential.js` 신설, 3개 라우트에 `mcp:admin`, `parseScopes` 정정, owner 지원, 프론트 관리자 키 입력 | ✅ 완료 (`5f81cf5`, **미배포**) |
+| 2026-08-15 | `ops/test-auth-credential.js` 18/18 통과 | ✅ 완료 |
 | 2026-08-15 | 지시서 #2를 `git pull` 방식으로 갱신 — 수동 패치는 fallback으로 접어둠, 롤백도 git 기반으로 교체 | ✅ 완료 |
 | 2026-08-15 | Hermes 전달 시도 — **MCP 채널 없음 확인** (등록 에이전트 16명에 hermes 없음, `agent.send_message` 주소 부재) | ℹ️ 확인 |
 | 2026-08-15 | 대안 경로로 전달 — 지시서 #1·#2 + 로드맵 + 스펙검토를 저장소에 푸시 (`c80526a`) | ✅ 완료 |
@@ -170,6 +175,26 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | `agent.list` 배포 후 검증 (capability 필터) | ⏸ 배포 대기 |
 
 > 이후 작업은 이 표에 계속 추가할 것.
+
+### ⚠️ 배포 대기 — 할매봇 작업 필요
+
+**커밋 `5f81cf5` (P0 보안)는 푸시됐으나 VPS 미배포다.** 배포 전까지 자격증명 API는 계속 열려 있다.
+
+```bash
+cd /opt/data/projects/workflow-builder
+git pull origin main
+node ops/test-auth-credential.js        # 18/18 기대
+npx pm2 restart workflow-builder        # ← 이번엔 필수 (server.js·라우터 변경)
+```
+
+배포 직후 확인:
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://187.127.124.16.sslip.io/api/agents/ag_orch/credentials
+# 401 이어야 한다 (이전 200)
+```
+
+> **주의:** 배포 순간부터 웹 UI의 키 발급 버튼은 **관리자 키 입력이 필요**하다.
+> `ag_claude_desktop` 키가 `mcp:admin`을 보유하므로 그것을 쓰면 된다.
 
 ### 해결됨
 

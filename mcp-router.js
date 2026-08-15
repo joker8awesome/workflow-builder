@@ -3,6 +3,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 const { parseScopes } = require('./auth-credential');
+const { parseJsonb } = require('./jsonb');
 const pool = new Pool(process.env.DATABASE_URL
   ? { connectionString: process.env.DATABASE_URL }
   : { host: process.env.PGHOST || '/opt/data/pgdata',
@@ -165,7 +166,10 @@ async function callTool(name, args, ctx) {
       const { rows } = await pool.query(
         'SELECT id, name, data, updated_at FROM wf_workflows ORDER BY updated_at DESC' +
         (lim ? ' LIMIT $1' : ''), lim ? [lim] : []);
-      const wfs = rows.map(r => { let d = {}; try { d = (typeof r.data === 'string') ? (JSON.parse(r.data) || {}) : (r.data || {}); } catch (e) { console.warn('[mcp] workflow.data 파싱 실패:', r.id, e.message); } return { id: r.id, name: r.name, node_count: (d.nodes || []).length, updated_at: r.updated_at }; });
+      const wfs = rows.map(r => {
+        const d = parseJsonb(r.data, { label: 'wf_workflows.data', id: r.id });
+        return { id: r.id, name: r.name, node_count: (d.nodes || []).length, updated_at: r.updated_at };
+      });
       return { content: [{ type: 'text', text: JSON.stringify({ workflows: wfs }) }] };
     }
     case 'workflow.execute': {
@@ -216,9 +220,7 @@ async function callTool(name, args, ctx) {
          GROUP BY a.id, a.name, a.role, a.machine
          ORDER BY a.id`);
       let agents = rows.map(a => {
-        let m = {};
-        try { m = (typeof a.machine === 'string') ? (JSON.parse(a.machine) || {}) : (a.machine || {}); }
-        catch (e) { console.warn('[mcp] agents.machine 파싱 실패:', a.id, e.message); }
+        const m = parseJsonb(a.machine, { label: 'agents.machine', id: a.id });
         return {
           agent_id: a.id,
           name: a.name,

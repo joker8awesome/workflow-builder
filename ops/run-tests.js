@@ -28,6 +28,7 @@ const SUITES = [
   { name: '세션 상태 전이 (session-status)', file: 'ops/test-session-status.py', runner: 'python', expect: 10 },
   { name: '조용한 예외 삼킴 없음 (no-silent-catch)', file: 'ops/test-no-silent-catch.js', runner: 'node', expect: 11 },
   { name: 'MCP 툴 계약 (mcp-contract)', file: 'ops/test-mcp-contract.js', runner: 'node', expect: 24 },
+  { name: 'JSONB 파싱 일원화 (jsonb)', file: 'ops/test-jsonb.js', runner: 'node', expect: 19 },
 ];
 
 function findPython() {

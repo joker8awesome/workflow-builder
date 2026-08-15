@@ -57,6 +57,7 @@ app.use(express.json({ limit: '10mb' }));
 app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallbackLog }));
 
 const notify = require('./notify');
+const { parseJsonbStrict } = require('./jsonb');
 const approvalGate = require('./approval-gate');
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool(process.env.DATABASE_URL
@@ -1206,7 +1207,9 @@ app.post('/api/workflows/:id/execute', requireAuth, async (req, res) => {
     const { rows } = await pool.query('SELECT id, name, data FROM wf_workflows WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, error: 'not found' });
     const wf = rows[0];
-    const data = typeof wf.data === 'string' ? JSON.parse(wf.data) : (wf.data || {});
+    // 실행 직전이므로 엄격 모드 — data 가 깨졌는데 빈 객체로 진행하면
+    // 노드 0개짜리 실행을 '성공'으로 보고하게 된다.
+    const data = parseJsonbStrict(wf.data, { label: 'wf_workflows.data', id: wf.id });
     const nodes = data.nodes || [], edges = data.edges || [];
     // 간단 실행 시뮬레이션 — 시작→연결 추적
     const start = nodes.find(n => n.type === 'start');

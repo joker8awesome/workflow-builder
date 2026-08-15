@@ -7,7 +7,10 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node ops/run-tests.js",
+    "test:list": "node ops/run-tests.js --list",
+    "check": "node --check server.js && node --check mcp-router.js && node --check credentials-api.js && node --check auth-credential.js && node --check notify.js && node --check approval-gate.js",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

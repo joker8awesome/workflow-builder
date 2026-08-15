@@ -31,9 +31,7 @@ git status --short          # 비어 있어야 한다
 git pull origin main        # 8fb464c
 
 node --check server.js && node --check notify.js
-node ops/test-telegram-webhook.js     # 17/17 기대
-node ops/test-approval-notify.js      # 18/18 기대
-node ops/test-auth-credential.js      # 18/18 기대
+node ops/run-tests.js                 # 62건 전부 통과 기대
 ```
 
 하나라도 FAIL 이면 멈추고 보고할 것.
@@ -215,9 +213,7 @@ node ops/setup-telegram-webhook.js --delete
 ```
 [1] 코드
 - HEAD : ______ (8fb464c 기대)
-- test-telegram-webhook : __/17
-- test-approval-notify  : __/18
-- test-auth-credential  : __/18
+- npm test (4스위트 62건) : __/62
 
 [2] 환경변수
 - WF_APPROVAL_REQUIRED       : ______

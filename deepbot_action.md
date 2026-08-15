@@ -164,16 +164,27 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서 #2를 `git pull` 방식으로 갱신 — 수동 패치는 fallback으로 접어둠, 롤백도 git 기반으로 교체 | ✅ 완료 |
 | 2026-08-15 | Hermes 전달 시도 — **MCP 채널 없음 확인** (등록 에이전트 16명에 hermes 없음, `agent.send_message` 주소 부재) | ℹ️ 확인 |
 | 2026-08-15 | 대안 경로로 전달 — 지시서 #1·#2 + 로드맵 + 스펙검토를 저장소에 푸시 (`c80526a`) | ✅ 완료 |
-| 2026-08-15 | **오케스트레이터 VPS 배포 + 실행 중 검증** | ⏸ 대기 — Hermes 인계 (`git pull origin main` → `c80526a`) |
+| 2026-08-15 | **오케스트레이터 VPS 배포** (할매봇 수행) — 테스트 10/10, 워크플로우 실행 | ✅ 완료 |
+| 2026-08-15 | 배포 독립 검증 (로컬) — 세션 `done` **14개** 확인. 이전엔 19개 전부 `idle` | ✅ **전이 동작 확정** |
+| 2026-08-15 | `active_sessions` 실행 후 0 — 정상 (`done`은 활성 어휘가 아니므로 sweep 대상 아님) | ✅ 설계대로 |
 | 2026-08-15 | `agent.list` 배포 후 검증 (capability 필터) | ⏸ 배포 대기 |
 
 > 이후 작업은 이 표에 계속 추가할 것.
+
+### 해결됨
+
+| 항목 | 결과 |
+|------|------|
+| **`online` / `active_sessions` 영구 0** | `agent_sessions.status`에 `running`/`working`/`waiting`을 쓰는 코드가 없어(전부 `idle`) 팀 대시보드 실시간 표시가 **처음부터 동작한 적 없었음.** → 오케스트레이터가 `running` → `done`/`failed`로 전이하도록 수정(`75cd44a`), `f0894a3` 배포. **검증: 세션 `done` 14개** (이전 19개 전부 `idle`) |
+| `agent.list` 하드코딩 | `capabilities`/`tools`/`trust_score`가 리터럴 빈 값, `capability` 필터 무시됨 → `machine` JSONB에서 읽도록 수정(`06acf07`). **검증: `capability=verify` → 3명** |
+| `workflow.list` `node_count: 0` | JSONB 이중 파싱을 빈 `catch`가 삼킴 → 타입 분기 + `console.warn` (`7b52bb3`) |
 
 ### 미해결 / 확인 필요
 
 | 항목 | 내용 |
 |------|------|
-| **🔴 `online` / `active_sessions` 영구 0 (확정)** | `agent_sessions.status`에 실제로 쓰이는 값은 `idle` 뿐이다(라이브 19세션 전부 `idle`). 코드 전수 확인 결과 `running`/`working`/`waiting`을 **쓰는 곳이 한 군데도 없다** — `agent_orchestrator.py:52`는 `'idle'` 하드코딩, `server.js:777·816`은 `status \|\| 'idle'`, `index.html`은 `idle`/`ok`/`fail`만 전송. 따라서 ① `agent.list`의 `online`은 **항상 false** ② `/api/team/status`의 `active_sessions`도 같은 필터라 **항상 0** = 팀 대시보드 실시간 ●○ 표시가 **처음부터 동작한 적 없음**(기존 버그). 상태 어휘를 정의하고 오케스트레이터가 실제로 기록하도록 고쳐야 함 |
+| **작업 로그 동시 편집 주의** | `deepbot_action.md`가 이제 저장소에 있어 **로컬 세션과 할매봇이 같은 파일을 편집**한다. 각자 커밋하면 충돌한다. 규칙: 편집 전 `git pull` → 자기 행만 추가 → 즉시 push. 남의 행을 지우거나 재정렬하지 말 것 |
+| 세션 무한 누적 | `create_sessions`가 실행마다 새 UUID로 세션을 만든다. 19 → **43개**로 늘었고 정리 로직이 없다. 급하지 않으나 로드맵 Phase 3에 넣을 것 |
 | 8/14 22:28 대량 쓰기 | 워크플로우 50행이 서버 부팅 +11초에 일괄 갱신. 침해 정황 없음(배포 작업 중). 원인 코드 미특정 — `updated_at` 트리거 확인 SQL은 spec-review §2 참조 |
 | `WF_ACCESS_TOKEN` | 미설정이면 `/api/agents` POST/DELETE가 무인증 노출. `npx pm2 env 0`로 확인 필요 |
 | 템플릿 중복 | `wf_tpl_team` 과 `wf_tpl_team_mstiqejr` 등 각 2벌 — 정본 결정 필요 |

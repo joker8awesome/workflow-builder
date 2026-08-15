@@ -68,7 +68,7 @@ const SCOPE_FOR_TOOL = {
 // ------- 툴 스키마 -------
 const TOOLS = [
   { name: 'agent.whoami', description: '연결된 세션의 신원 확인', inputSchema: { type: 'object', properties: {} } },
-  { name: 'agent.tasks.list_pending', description: '나에게 온 처리 대기 명령 조회', inputSchema: { type: 'object', properties: { limit: { type: 'number', default: 20 }, since: { type: 'string', format: 'date-time' } } } },
+  { name: 'agent.tasks.list_pending', description: '나에게 온 처리 대기 메시지 조회 (기본 command/instruction)', inputSchema: { type: 'object', properties: { limit: { type: 'number', default: 20 }, since: { type: 'string', format: 'date-time' }, types: { type: 'array', items: { enum: ['command', 'instruction', 'report'] } } } } },
   { name: 'agent.tasks.claim', description: '명령 클레임 (동시 처리 방지)', inputSchema: { type: 'object', required: ['message_id'], properties: { message_id: { type: 'string' } } } },
   { name: 'agent.payload.get', description: 'payload_ref를 실제 데이터로 해석', inputSchema: { type: 'object', required: ['payload_ref'], properties: { payload_ref: { type: 'string' } } } },
   { name: 'agent.report', description: '작업 결과 보고', inputSchema: { type: 'object', required: ['trace_id', 'task_status'], properties: { trace_id: { type: 'string' }, task_status: { enum: ['completed', 'failed'] }, result: {}, error: { type: 'string' }, duration_ms: { type: 'number' } } } },
@@ -106,12 +106,20 @@ async function callTool(name, args, ctx) {
       if (args && args.since && !useSince) {
         console.warn('[mcp] list_pending: since 파싱 실패, 무시함:', args.since);
       }
+      // types 미지정 시 기존 동작(command/instruction)을 유지한다.
+      // report 를 기본에 넣으면 "처리할 작업"과 "받은 보고"가 섞인다.
+      // 다만 지정하면 볼 수 있어야 한다 — 할매봇이 report 로 보낸 보고가
+      // 이 툴에 잡히지 않아 큐에 쌓이기만 하던 문제가 있었다.
+      const ALLOWED_TYPES = ['command', 'instruction', 'report'];
+      let types = Array.isArray(args && args.types) ? args.types.filter(t => ALLOWED_TYPES.includes(t)) : [];
+      if (!types.length) types = ['command', 'instruction'];
+      const params = [agent_id, limit, types];
+      if (useSince) params.push(since.toISOString());
       const { rows } = await pool.query(
         `SELECT id, from_agent, msg_type, payload_ref, trace_id, status, created_at
-         FROM agent_messages WHERE to_agent = $1 AND msg_type IN ('command','instruction') AND status = 'pending'
-         ${useSince ? 'AND created_at > $3' : ''}
-         ORDER BY created_at ASC LIMIT $2`,
-        useSince ? [agent_id, limit, since.toISOString()] : [agent_id, limit]);
+         FROM agent_messages WHERE to_agent = $1 AND msg_type = ANY($3) AND status = 'pending'
+         ${useSince ? 'AND created_at > $4' : ''}
+         ORDER BY created_at ASC LIMIT $2`, params);
       const tasks = rows.map(r => ({ message_id: 'msg_' + r.id, from_agent: r.from_agent, type: r.msg_type, payload_ref: r.payload_ref, trace_id: r.trace_id, timestamp: r.created_at, claimed_by: null }));
       return { content: [{ type: 'text', text: JSON.stringify({ tasks }) }] };
     }

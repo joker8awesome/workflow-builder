@@ -63,7 +63,13 @@ async function main() {
 
   let tasks = [];
   try {
-    const out = await callTool(key, 'agent.tasks.list_pending', { limit: 20 });
+    // report 도 함께 본다. 할매봇이 send_to_center.py 로 보내는 보고가
+    // msg_type='report' 라, 기본값(command/instruction)만 보면
+    // 큐에 쌓이기만 하고 이쪽에서는 영영 보이지 않는다.
+    const out = await callTool(key, 'agent.tasks.list_pending', {
+      limit: 20,
+      types: ['command', 'instruction', 'report'],
+    });
     tasks = out.tasks || [];
   } catch (e) {
     console.error('❌ 큐 조회 실패:', e.message);

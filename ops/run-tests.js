@@ -30,6 +30,7 @@ const SUITES = [
   { name: 'MCP 툴 계약 (mcp-contract)', file: 'ops/test-mcp-contract.js', runner: 'node', expect: 24 },
   { name: 'JSONB 파싱 일원화 (jsonb)', file: 'ops/test-jsonb.js', runner: 'node', expect: 19 },
   { name: '라우트 인증 (route-auth)', file: 'ops/test-route-auth.js', runner: 'node', expect: 4 },
+  { name: '스케줄러 큐 필터 (scheduler-queue)', file: 'ops/test-scheduler-queue.py', runner: 'python', expect: 8 },
 ];
 
 function findPython() {

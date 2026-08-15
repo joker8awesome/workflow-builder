@@ -88,19 +88,34 @@ def request_approval(wf_id, agent_id, action, context):
         print(f"[승인] 요청 실패: {e}")
         return None
 
-def poll_agent_messages(seen):
-    """ag_hermes 앞으로 온 미처리 명령을 감지해 사용자에게 알린다.
+def poll_agent_messages(seen, since):
+    """미처리 명령을 감지해 사용자에게 알린다.
 
     할매봇이 직접 처리하더라도, 사용자가 '무슨 일이 시작됐는지' 모르는 상태를
     만들지 않기 위해 여기서 한 번 알린다.
+
+    두 가지를 거른다 — 둘 다 실제로 사고를 냈다:
+
+    1) `since` 이전 메시지는 무시한다.
+       seen 집합이 메모리에만 있어서, 재시작할 때마다 밀려 있던 pending 전부를
+       다시 알렸다. 실제로 재시작 한 번에 알림 7개가 나갔다.
+
+    2) agents 테이블에 없는 수신자 앞 메시지는 무시한다.
+       정리된 테스트 에이전트(ag_rt4, ag_dbg 등) 앞 메시지가 pending 으로
+       영원히 남아 매번 알림 대상이 됐다. 아무도 claim 할 수 없는 메시지다.
     """
     try:
         conn = db(); cur = conn.cursor()
         cur.execute(
-            """SELECT id, from_agent, to_agent, msg_type, trace_id, payload_ref, created_at
-               FROM agent_messages
-               WHERE status = 'pending' AND msg_type IN ('command','instruction')
-               ORDER BY created_at ASC LIMIT 20""")
+            """SELECT m.id, m.from_agent, m.to_agent, m.msg_type, m.trace_id,
+                      m.payload_ref, m.created_at
+               FROM agent_messages m
+               JOIN agents a ON a.id = m.to_agent
+               WHERE m.status = 'pending'
+                 AND m.msg_type IN ('command','instruction')
+                 AND m.created_at > %s
+               ORDER BY m.created_at ASC LIMIT 20""",
+            (since,))
         rows = cur.fetchall(); conn.close()
     except Exception as e:
         print(f"[큐] 조회 실패: {e}")
@@ -120,6 +135,10 @@ def main():
     print(f"  API  : {API_BASE}")
     last_minute = None
     seen_msgs = set()
+    # 기동 시각 이후에 생긴 메시지만 알린다.
+    # 이전에는 재시작할 때마다 밀려 있던 pending 을 전부 다시 알렸다.
+    started_at = datetime.now()
+    print(f"  큐 감시 기준 시각: {started_at:%Y-%m-%d %H:%M:%S} (이전 메시지는 무시)")
     while True:
         try:
             conn = db(); cur = conn.cursor()
@@ -132,7 +151,7 @@ def main():
                     run_workflow(wf_id)
             last_minute = now.minute
             # 에이전트 큐 감시 — 새 지시가 들어오면 사용자에게 알린다
-            poll_agent_messages(seen_msgs)
+            poll_agent_messages(seen_msgs, started_at)
             if len(seen_msgs) > 5000:
                 seen_msgs.clear()   # 무한 증가 방지
         except Exception as e:

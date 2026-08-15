@@ -1451,6 +1451,40 @@ app.post('/api/feedback', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 딥시크 LLM 워커 — ag_deepseek 에이전트 실행 ===
+// 규칙: 명령 수신 → deepseek-v4-flash 호출 → 결과 report (trace_id 유지)
+app.post('/api/llm/worker', async (req, res) => {
+  try {
+    const { prompt, agent_id, trace_id, system } = req.body || {};
+    if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
+    const nous = getNousAuth();
+    if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
+    const r = await fetch(nous.base + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
+      body: JSON.stringify({
+        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',
+        messages: [
+          { role: 'system', content: system || '당신은 커멘드센터의 딥시크 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 800
+      })
+    });
+    const j = await r.json();
+    const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || JSON.stringify(j);
+    // 보고 기록
+    if (agent_id) {
+      await pool.query(
+        `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
+         VALUES ('report', $1, 'ag_orch', $2, 'sent', $3)`,
+        [agent_id, JSON.stringify({ result: text, ok: true }), trace_id || '']
+      );
+    }
+    res.json({ success: true, agent_id: agent_id || 'ag_deepseek', result: text, trace_id: trace_id || '' });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === LLM 프록시 — 워크플로우 생성 ===
 const WF_SCHEMA_EXAMPLE = `{
   "nodes": [

@@ -769,7 +769,9 @@ app.get('/api/telegram/status', requireScope(pool, 'mcp:read', { allowAccessToke
       : tgStat.lastRejectReason === 'secret_mismatch'
       ? '텔레그램에 등록된 secret 이 서버 설정과 다르다 — setup-telegram-webhook.js --apply 로 재등록'
       : (tgStat.acceptCount === 0 && tgStat.rejectCount === 0
-          ? '콜백이 한 번도 도달하지 않았다 — 웹훅 미등록이거나 URL 이 잘못됐을 수 있다'
+          ? '업데이트가 한 번도 도달하지 않았다 — 웹훅 미등록이거나 URL 이 잘못됐을 수 있다'
+          : tgStat.messageCount === 0 && tgStat.callbackCount > 0
+          ? '버튼은 오는데 사용자 텍스트가 한 번도 오지 않았다 — allowed_updates 에 message 가 빠졌을 수 있다'
           : null),
   });
 });
@@ -836,12 +838,18 @@ app.get('/api/approvals/config', (req, res) => {
 // secret 이 어긋나면 서버가 403 으로 조용히 거부하고, 텔레그램은 사용자에게
 // 아무것도 알리지 않는다. 그래서 증상이 "버튼 먹통"으로만 보이고
 // 원인을 밖에서 확인할 방법이 없었다. 실제로 그 상태로 한참 갔다.
+// 버튼(callback_query)과 사용자 텍스트(message)를 따로 센다.
+// 한 칸으로 합쳐두면 "웹훅은 살아 있는데 어느 쪽이 오는지" 를 알 수 없다 —
+// message 를 allowed_updates 에 추가한 뒤 그게 실제로 도착하는지가 별개 질문이 됐다.
 const tgStat = {
-  lastCallbackAt: null,   // 마지막으로 정상 처리한 콜백
+  lastCallbackAt: null,   // 마지막으로 정상 처리한 콜백(버튼)
+  lastMessageAt: null,    // 마지막으로 받은 사용자 텍스트
   lastRejectAt: null,     // 마지막 거부
   lastRejectReason: null,
   rejectCount: 0,
-  acceptCount: 0,
+  acceptCount: 0,         // 콜백 + 메시지 합계 (웹훅이 살아 있는가)
+  callbackCount: 0,
+  messageCount: 0,
 };
 
 /**
@@ -892,7 +900,7 @@ async function handleUserMessage(msg) {
       `상태\n\n워크플로우 ${wf.rows[0].n} · 에이전트 ${ag.rows[0].n}\n` +
       `승인 대기 ${ap.rows[0].n}\n` +
       `승인 필요 작업: ${g.required.join(', ') || '(없음)'}\n` +
-      `웹훅 ${tgStat.webhookUrl ? '등록됨' : '미등록'} · 콜백 ${tgStat.acceptCount}건`));
+      `웹훅 ${tgStat.webhookUrl ? '등록됨' : '미등록'} · 버튼 ${tgStat.callbackCount}건 · 메시지 ${tgStat.messageCount}건`));
   }
 
   if (text === '/queue' || text === '큐') {
@@ -964,19 +972,21 @@ app.post('/api/telegram/webhook', async (req, res) => {
     }
     return res.sendStatus(403);
   }
-  tgStat.acceptCount++; tgStat.lastCallbackAt = new Date().toISOString();
+  tgStat.acceptCount++;
   // 텔레그램에는 항상 200을 빨리 돌려준다. 실패해도 재전송 폭주를 만들지 않는다.
   res.sendStatus(200);
 
   try {
     // 사용자가 봇에 보낸 텍스트 — 양방향 대화·트리거용
     if (req.body && req.body.message) {
+      tgStat.messageCount++; tgStat.lastMessageAt = new Date().toISOString();
       await handleUserMessage(req.body.message);
       return;
     }
 
     const cq = req.body && req.body.callback_query;
     if (!cq) return;
+    tgStat.callbackCount++; tgStat.lastCallbackAt = new Date().toISOString();
 
     const allowed = String(process.env.WF_TELEGRAM_CHAT_ID || '');
     const from = String(cq.message?.chat?.id ?? '');

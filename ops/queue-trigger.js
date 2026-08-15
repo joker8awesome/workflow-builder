@@ -71,15 +71,23 @@ function acquireLock() {
 }
 function releaseLock() { try { fs.unlinkSync(LOCK); } catch (e) {} }
 
-function loadSeen() {
+// 기동에 몇 번까지 다시 도전할지. 넘으면 포기하고 크게 알린다.
+const MAX_TRIES = Number(process.env.WF_TRIGGER_MAX_TRIES || 3);
+
+function loadState() {
   // 처리한 id 를 파일에 남긴다. 메모리에만 두면 cron 은 매번 새 프로세스라
   // 같은 지시로 계속 기동하게 된다.
-  try { return new Set(JSON.parse(fs.readFileSync(STATE, 'utf8')).seen || []); }
-  catch (e) { return new Set(); }
+  try {
+    const j = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+    return { seen: new Set(j.seen || []), tries: j.tries || {} };
+  } catch (e) { return { seen: new Set(), tries: {} }; }
 }
-function saveSeen(set) {
-  const arr = [...set].slice(-500);   // 무한 증가 방지
-  try { fs.writeFileSync(STATE, JSON.stringify({ seen: arr }, null, 0)); }
+function saveState(st) {
+  const arr = [...st.seen].slice(-500);   // 무한 증가 방지
+  // 이미 seen 인 건 시도 기록을 들고 있을 이유가 없다
+  const tries = {};
+  for (const [k, v] of Object.entries(st.tries)) if (!st.seen.has(k)) tries[k] = v;
+  try { fs.writeFileSync(STATE, JSON.stringify({ seen: arr, tries }, null, 0)); }
   catch (e) { console.warn('[trigger] 상태 저장 실패:', e.message); }
 }
 
@@ -116,8 +124,8 @@ async function listPending() {
   try { tasks = await listPending(); }
   catch (e) { console.error('[trigger] 큐 조회 실패:', e.message); process.exit(2); }
 
-  const seen = loadSeen();
-  const fresh = tasks.filter(t => !seen.has(t.message_id));
+  const st = loadState();
+  const fresh = tasks.filter(t => !st.seen.has(t.message_id));
 
   if (!fresh.length) {
     process.exit(1);   // 조용히 종료 — cron 로그를 더럽히지 않는다
@@ -125,8 +133,10 @@ async function listPending() {
 
   log(`새 지시 ${fresh.length}건 (${AGENT})`);
   for (const t of fresh) {
-    log(`  ${t.message_id} | ${t.from_agent} | trace=${t.trace_id || '-'} | ref=${t.payload_ref || '-'}`);
-    seen.add(t.message_id);
+    const n = (st.tries[t.message_id] || 0) + 1;
+    st.tries[t.message_id] = n;
+    log(`  ${t.message_id} | ${t.from_agent} | trace=${t.trace_id || '-'} | ref=${t.payload_ref || '-'}`
+      + (n > 1 ? ` | ${n}번째 시도` : ''));
   }
 
   // 트리거 파일 — 기동된 쪽이 이걸 읽어 무엇을 할지 안다
@@ -136,13 +146,18 @@ async function listPending() {
     }, null, 2));
   } catch (e) { console.warn('[trigger] 트리거 파일 기록 실패:', e.message); }
 
-  // seen 은 명령 실행 전에 저장한다.
-  // 명령이 실패해도 같은 지시로 매분 재기동하는 것을 막기 위해서다
-  // (실패는 로그로 알리고, 재시도는 사람이 판단한다).
-  saveSeen(seen);
+  // 시도 횟수는 기동 **전에** 저장한다.
+  // 프로세스가 중간에 죽어도(타임아웃·SIGKILL) 횟수는 남아야 무한 재시도를 막는다.
+  //
+  // seen 은 여기서 넣지 않는다. 예전엔 넣었는데, 기동이 실패해도 "봤다"가 돼서
+  // 그 지시가 영영 사라졌다 — 실제로 msg_176 이 그렇게 묻혀 사람이 파일을 지워야 했다.
+  // 매분 무한 재기동은 막되 일시적 실패는 넘기도록, 횟수를 세어 MAX_TRIES 까지만 다시 한다.
+  saveState(st);
 
   if (!CMD) {
     log('WF_TRIGGER_CMD 미설정 — 트리거 파일만 남긴다. 에이전트는 기동되지 않는다');
+    for (const t of fresh) st.seen.add(t.message_id);
+    saveState(st);
     process.exit(0);
   }
 
@@ -150,11 +165,25 @@ async function listPending() {
   try {
     const out = execSync(CMD, { cwd: ROOT, encoding: 'utf8', timeout: 10 * 60 * 1000, stdio: 'pipe' });
     if (out) log(out.trim().slice(0, 2000));
+    for (const t of fresh) st.seen.add(t.message_id);
+    saveState(st);
     log('기동 완료');
   } catch (e) {
     console.error('[trigger] 기동 실패:', e.message);
     if (e.stdout) console.error(String(e.stdout).slice(0, 1000));
     if (e.stderr) console.error(String(e.stderr).slice(0, 1000));
+
+    // 횟수를 넘긴 건은 포기한다. 조용히 넘기면 매분 같은 실패를 반복한다.
+    const done = fresh.filter(t => (st.tries[t.message_id] || 0) >= MAX_TRIES);
+    for (const t of done) st.seen.add(t.message_id);
+    saveState(st);
+    if (done.length) {
+      console.error(`[trigger] ${MAX_TRIES}회 실패로 포기: ${done.map(t => t.message_id).join(', ')}`);
+      console.error('[trigger] 이 지시들은 자동으로 다시 시도하지 않는다. 사람이 확인할 것.');
+    } else {
+      const left = fresh.map(t => `${t.message_id}(${st.tries[t.message_id]}/${MAX_TRIES})`).join(', ');
+      console.error(`[trigger] 다음 회차에 다시 시도한다: ${left}`);
+    }
     process.exit(2);
   }
   process.exit(0);

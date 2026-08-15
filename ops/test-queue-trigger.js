@@ -5,8 +5,8 @@
  * 이 스크립트는 cron 이 1분마다 돌린다. 두 가지가 특히 중요하다:
  *   1) 같은 지시로 반복 기동하지 않을 것 — seen 을 파일에 남겨야 한다.
  *      메모리에만 두면 cron 은 매번 새 프로세스라 매분 다시 기동한다.
- *   2) 기동 명령이 실패해도 같은 지시로 계속 재시도하지 않을 것 —
- *      실패는 로그로 알리고 재시도는 사람이 판단한다.
+ *   2) 기동이 실패해도 지시를 잃지 않을 것 — 실패 즉시 seen 에 넣으면 그 지시는
+ *      영영 사라진다. 정해진 횟수까지 다시 시도하고, 넘으면 크게 알리고 멈춘다.
  *
  * 실행: node ops/test-queue-trigger.js
  */
@@ -92,13 +92,33 @@ srv.listen(0, '127.0.0.1', async () => {
   check('새 건만 대상', fs.existsSync(OUT) &&
     JSON.parse(fs.readFileSync(OUT, 'utf8')).tasks.length === 1);
 
-  console.log('\n5) 기동 명령이 실패해도 같은 지시를 반복하지 않는다');
+  console.log('\n5) 기동이 실패하면 정해진 횟수만큼 다시 시도하고 멈춘다');
+  // 실패했다고 바로 포기하면 그 지시는 영영 사라진다 (msg_176 이 그렇게 묻혔다).
+  // 그렇다고 무한히 재시도하면 매분 같은 실패가 반복된다. 그래서 횟수를 센다.
   TASKS.push({ message_id: 'msg_3', from_agent: 'x', trace_id: 't3', payload_ref: '' });
-  r = await run({ WF_TRIGGER_CMD: 'node -e "process.exit(3)"' });
+  const FAIL = 'node -e "process.exit(3)"';
+  r = await run({ WF_TRIGGER_CMD: FAIL, WF_TRIGGER_MAX_TRIES: '3' });
   check('실패를 종료코드 2로 알림', r.status === 2, String(r.status));
-  r = await run({ WF_TRIGGER_CMD: 'node -e "process.exit(3)"' });
-  check('재시도하지 않음', r.status === 1,
-    '실패한 지시로 매분 재기동하면 로그가 폭주하고 부작용이 반복된다');
+  check('실패했다고 seen 에 넣지 않는다',
+    !JSON.parse(fs.readFileSync(STATE, 'utf8')).seen.includes('msg_3'),
+    '여기서 넣으면 일시적 실패로 지시가 영구히 사라진다');
+
+  r = await run({ WF_TRIGGER_CMD: FAIL, WF_TRIGGER_MAX_TRIES: '3' });
+  check('2번째 시도를 한다', r.status === 2, String(r.status));
+  r = await run({ WF_TRIGGER_CMD: FAIL, WF_TRIGGER_MAX_TRIES: '3' });
+  check('3번째 시도를 한다', r.status === 2, String(r.status));
+
+  r = await run({ WF_TRIGGER_CMD: FAIL, WF_TRIGGER_MAX_TRIES: '3' });
+  check('횟수를 넘기면 포기한다', r.status === 1,
+    '무한 재시도하면 매분 같은 실패가 반복되고 로그가 폭주한다');
+
+  // 성공하면 그때 seen 에 들어가고, 다음 회차에는 조용해야 한다
+  TASKS.push({ message_id: 'msg_4', from_agent: 'x', trace_id: 't4', payload_ref: '' });
+  r = await run({ WF_TRIGGER_CMD: `node -e "require('fs').writeFileSync('${MARK.replace(/\\/g, '\\\\')}','1')"`, WF_TRIGGER_MAX_TRIES: '3' });
+  check('성공하면 seen 에 들어간다',
+    r.status === 0 && JSON.parse(fs.readFileSync(STATE, 'utf8')).seen.includes('msg_4'));
+  r = await run({ WF_TRIGGER_CMD: FAIL, WF_TRIGGER_MAX_TRIES: '3' });
+  check('성공한 건은 다시 기동하지 않는다', r.status === 1);
 
   console.log('\n6) 키가 없으면 명확히 실패');
   r = await run({ WF_MCP_KEY: '' });

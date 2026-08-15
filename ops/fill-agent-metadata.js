@@ -40,6 +40,8 @@ const META = {
   ag_auditor:       { capabilities: ['audit', 'compliance', 'verify'],       tools: ['audit', 'db'] },
   // 팀 역할이 아닌 외부 커넥터 신원 — 팀 라우팅에 섞이지 않도록 최소 메타데이터만 부여
   ag_claude_desktop: { capabilities: ['connect'], tools: ['mcp'] },
+  // VPS 운영 주체. 등록만 되고 메타데이터가 비어 있어 capability 필터에 잡히지 않았다.
+  ag_hermes: { capabilities: ['deploy', 'verify', 'operate'], tools: ['git', 'pm2', 'psql'] },
 };
 
 // 아직 실제 연동이 없는 tools — 워커 연동 시 해제
@@ -73,7 +75,9 @@ async function main() {
       tools: meta.tools,
       trust_score: existing.trust_score ?? TRUST_DEFAULT,
     };
-    // 전체 컬럼 upsert이므로 모든 필드를 그대로 되돌려 보낸다
+    // 전체 컬럼 upsert이므로 모든 필드를 그대로 되돌려 보낸다.
+    // owner 는 서버가 COALESCE 로 보존하지만, 서버 동작에 의존하지 않고
+    // 스냅샷 값을 명시적으로 되돌려 보낸다.
     const body = {
       id: a.id,
       name: a.name,
@@ -82,6 +86,7 @@ async function main() {
       color: a.color,
       machine,
     };
+    if (a.owner !== undefined && a.owner !== null && a.owner !== '') body.owner = a.owner;
 
     const kept = Object.keys(existing).join(',') || '(없음)';
     const planned = meta.tools.filter(t => PLANNED_TOOLS.has(t));

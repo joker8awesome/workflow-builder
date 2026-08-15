@@ -21,7 +21,13 @@ WF_MCP_KEY=
 #    "실행했다"로 기록되어 그 지시가 영원히 처리되지 않는다.
 #
 # hermes -z 는 oneshot(종료형)이라 cron 에 적합하다.
-WF_TRIGGER_CMD=/opt/hermes/.venv/bin/hermes -z "커멘드센터 큐에 새 지시가 있다. ops/.queue-trigger.json 을 읽어 어떤 지시인지 확인하고, git pull origin main 후 payload_ref 가 가리키는 지시서를 읽고 수행하라. 끝나면 agent.tasks.claim 으로 해당 message_id 를 claim 하고, send_to_center.py 로 센터장에게 보고하라. 프로덕션 쓰기와 배포는 승인 게이트를 거친다. 판단이 서지 않으면 실행하지 말고 보고만 하라."
+#
+# ⚠️ 값 전체를 작은따옴표로 감쌀 것.
+#    이 파일은 `set -a; . file` 로 읽힌다. 감싸지 않으면 셸이
+#    `WF_TRIGGER_CMD=/opt/.../hermes` 까지만 대입으로 보고 `-z` 를 명령으로 실행하려 해
+#    `-z: command not found` 가 나고 변수는 비어 버린다. (실제로 겪은 문제다)
+#    안쪽 프롬프트에 큰따옴표가 있으므로 바깥은 작은따옴표여야 한다.
+WF_TRIGGER_CMD='/opt/hermes/.venv/bin/hermes -z "커멘드센터 큐에 새 지시가 있다. ops/.queue-trigger.json 을 읽어 어떤 지시인지 확인하고, git pull origin main 후 payload_ref 가 가리키는 지시서를 읽고 수행하라. 끝나면 agent.tasks.claim 으로 해당 message_id 를 claim 하고, send_to_center.py 로 센터장에게 보고하라. 프로덕션 쓰기와 배포는 승인 게이트를 거친다. 판단이 서지 않으면 실행하지 말고 보고만 하라."'
 
 # node 가 표준 경로에 없으면 지정 (cron 은 PATH 가 최소다)
 # WF_NODE_DIR=/usr/local/bin

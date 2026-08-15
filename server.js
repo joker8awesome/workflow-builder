@@ -167,7 +167,7 @@ app.put('/api/workflows/:id', async (req, res) => {
       await pool.query('INSERT INTO wf_versions (wf_id, data, created_at) VALUES ($1,$2,now())',
         [req.params.id, JSON.stringify(data || {})]);
       await pool.query('DELETE FROM wf_versions WHERE wf_id = $1 AND id NOT IN (SELECT id FROM wf_versions WHERE wf_id = $1 ORDER BY id DESC LIMIT 50)', [req.params.id]);
-    } catch (e) {}
+    } catch (e) { console.warn('[wf] 버전 스냅샷 기록 실패:', e.message); }
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
@@ -388,7 +388,7 @@ agentWss.on('connection', (ws, req) => {
     .then(r => {
       if (!r.rows.length || r.rows[0].agent_id !== agentId) { ws.close(4003, 'invalid credential'); return; }
       agentSockets.set(agentId, ws);
-      pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(() => {});
+      pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(e => console.warn('[auth] last_used_at 갱신 실패:', e.message));
       ws.send(JSON.stringify({ type: 'connected', agent_id: agentId, ts: new Date().toISOString() }));
       console.log('[agent-ws] 연결됨:', agentId);
       broadcastAgentStatus();
@@ -399,9 +399,9 @@ agentWss.on('connection', (ws, req) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.type === 'report') {
-        pool.query("UPDATE agent_messages SET task_status = 'completed', updated_at = now() WHERE trace_id = $1", [msg.trace_id || '']).catch(() => {});
+        pool.query("UPDATE agent_messages SET task_status = 'completed', updated_at = now() WHERE trace_id = $1", [msg.trace_id || '']).catch(e => console.warn('[agent-ws] task_status 갱신 실패:', e.message));
       }
-    } catch (e) {}
+    } catch (e) { console.warn('[agent-ws] 수신 메시지 처리 실패:', e.message); }
   });
   ws.on('close', () => { agentSockets.delete(agentId); console.log('[agent-ws] 해제:', agentId); broadcastAgentStatus(); });
 });
@@ -541,7 +541,7 @@ app.post('/api/webhook/:token', async (req, res) => {
       `INSERT INTO wf_runlogs (wf_id, run_path, run_at) VALUES ($1, $2, now())`,
       [reg.wfId, 'WEBHOOK → ' + (reg.nodeId || 'start')]
     );
-  } catch (e) {}
+  } catch (e) { console.warn('[webhook] 실행 로그 기록 실패:', e.message); }
   res.json({ success: true, triggered: reg });
 });
 
@@ -567,7 +567,7 @@ app.post('/api/exec', async (req, res) => {
     let cwd = '/opt/data/projects/workflow-builder';
     if (agent_id) {
       cwd = AGENT_ROOT + '/' + agent_id;
-      try { fs.mkdirSync(cwd, { recursive: true }); } catch (e) {}
+      try { fs.mkdirSync(cwd, { recursive: true }); } catch (e) { console.warn('[exec] 작업 디렉터리 생성 실패:', e.message); }
     }
     // 3: resource budget — 최대 실행 시간 (기본 10s)
     const { timeout } = req.body || {};
@@ -1571,7 +1571,7 @@ ${WF_SCHEMA_EXAMPLE}`;
          ON CONFLICT DO NOTHING`,
         [cacheHash, prompt, JSON.stringify(wf), routeModel]
       );
-    } catch (e) {}
+    } catch (e) { console.warn('[llm] 캐시 저장 실패:', e.message); }
     res.json({ success: true, workflow: wf });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });

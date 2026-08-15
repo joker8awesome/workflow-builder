@@ -138,7 +138,7 @@ module.exports = function createCredentialsRouter(db) {
         `INSERT INTO audit_logs (actor, action, resource, created_at)
          VALUES ($1, 'credential.revoke', $2, now())`,
         [req.agent_id || agent_id, JSON.stringify({ credential_id: credId, target_agent: agent_id })]
-      ).catch(() => {});
+      ).catch(e => console.warn('[cred] 폐기 감사 로그 실패:', e.message));
       res.json({ revoked: true, credential_id: credId });
     } catch (err) {
       console.error('DELETE credentials failed:', err);

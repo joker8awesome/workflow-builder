@@ -26,6 +26,7 @@ const SUITES = [
   { name: '승인 게이트·알림 (approval/notify)', file: 'ops/test-approval-notify.js', runner: 'node', expect: 19 },
   { name: '텔레그램 웹훅 (telegram-webhook)', file: 'ops/test-telegram-webhook.js', runner: 'node', expect: 16 },
   { name: '세션 상태 전이 (session-status)', file: 'ops/test-session-status.py', runner: 'python', expect: 10 },
+  { name: '조용한 예외 삼킴 없음 (no-silent-catch)', file: 'ops/test-no-silent-catch.js', runner: 'node', expect: 11 },
 ];
 
 function findPython() {

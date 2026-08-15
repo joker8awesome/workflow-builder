@@ -41,7 +41,7 @@ async function authenticate(req, res, next) {
     // scopes 는 배열이 아니라 Postgres 배열 리터럴 문자열('{"mcp:read",...}')로 온다.
     // 그대로 두면 아래 스코프 검사의 .includes() 가 부분 문자열 검사가 된다.
     req.scopes = parseScopes(rows[0].scopes);
-    pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(() => {});
+    pool.query('UPDATE agent_credentials SET last_used_at = now() WHERE key_hash = $1', [keyHash]).catch(e => console.warn('[mcp] last_used_at 갱신 실패:', e.message));
     next();
   } catch (e) {
     res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'internal error' }, id: null });
@@ -87,7 +87,7 @@ async function callTool(name, args, ctx) {
   try {
     await pool.query('INSERT INTO audit_logs (actor, agent_id, resource, action, detail) VALUES ($1,$2,$3,$4,$5)',
       [agent_id, agent_id, JSON.stringify(args || {}).slice(0, 500), 'mcp.' + name, JSON.stringify(args || {}).slice(0, 500)]);
-  } catch (e) {}
+  } catch (e) { console.warn('[mcp] 감사 로그 기록 실패:', e.message); }
   switch (name) {
     case 'agent.whoami': {
       const { rows } = await pool.query('SELECT id, name, role FROM agents WHERE id = $1', [agent_id]);
@@ -127,12 +127,12 @@ async function callTool(name, args, ctx) {
         if (parseInt(chk.rows[0].count) > 0) {
           return { content: [{ type: 'text', text: JSON.stringify({ idempotent: true, trace_id, result_payload_ref: 'result_' + trace_id.slice(-6) }) }] };
         }
-      } catch (e) {}
+      } catch (e) { console.warn('[mcp] 멱등성 확인 실패 — 중복 처리될 수 있다:', e.message); }
       await pool.query(`UPDATE agent_messages SET status = $1, read_at = now() WHERE trace_id = $2`, [task_status === 'completed' ? 'completed' : 'failed', trace_id]);
       const rref = 'result_' + Date.now().toString(36);
       try {
         await pool.query('INSERT INTO wf_results (wf_id, node_id, result) VALUES ($1,$2,$3)', [trace_id.slice(0, 8), rref, JSON.stringify({ agent: agent_id, result: result || null, error: error || null, status: task_status })]);
-      } catch (e) {}
+      } catch (e) { console.warn('[mcp] 결과 저장 실패 — payload_ref 가 빈 참조가 된다:', e.message); }
       // 체크포인트 기록 — 멱등성 기반 (done/failed)
       try {
         await pool.query(
@@ -142,8 +142,8 @@ async function callTool(name, args, ctx) {
            task_status === 'completed' ? 'done' : 'failed',
            JSON.stringify({ agent_id, trace_id, status: task_status, error: error || null })]
         );
-      } catch (e) {}
-      try { const srv = require('./server'); if (srv && srv.broadcastWf) srv.broadcastWf(trace_id, { agent_report: true, status: task_status, agent_id }); } catch (e) {}
+      } catch (e) { console.warn('[mcp] 체크포인트 기록 실패:', e.message); }
+      try { const srv = require('./server'); if (srv && srv.broadcastWf) srv.broadcastWf(trace_id, { agent_report: true, status: task_status, agent_id }); } catch (e) { console.warn('[mcp] WS 브로드캐스트 실패:', e.message); }
       return { content: [{ type: 'text', text: JSON.stringify({ report_message_id: 'msg_' + Date.now().toString(36), result_payload_ref: rref, checkpoint_id: 'chk_' + Date.now().toString(36), span_id: 'span_' + Date.now().toString(36) }) }] };
     }
     case 'workflow.list': {
@@ -157,7 +157,7 @@ async function callTool(name, args, ctx) {
       const trace_id = 'trace_' + Date.now().toString(36);
       try {
         await pool.query(`INSERT INTO wf_runlogs (wf_id, run_path, status) VALUES ($1, $2, 'running')`, [workflow_id, 'MCP 트리거']);
-      } catch (e) {}
+      } catch (e) { console.warn('[mcp] 실행 로그 기록 실패:', e.message); }
       return { content: [{ type: 'text', text: JSON.stringify({ run_id, trace_id, status: 'started', started_at: new Date().toISOString(), inputs: inputs || {} }) }] };
     }
     case 'workflow.get_status': {
@@ -174,7 +174,7 @@ async function callTool(name, args, ctx) {
       await pool.query('INSERT INTO agent_messages (msg_type, from_agent, to_agent, session_id, payload, status, trace_id, payload_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
         [type || 'command', agent_id, to_agent, sid, '{}', 'pending', trace_id || '', payload_ref || '']);
       const pushed = false;  // WS push는 서버 모듈 참조 (순환 방지 — DB 대기열로 충분)
-      try { const srv = require('./server'); if (srv && srv.sendAgentCommand) pushed = await srv.sendAgentCommand(to_agent, { type: type || 'command', from_agent: agent_id, to_agent, payload_ref: payload_ref || '', trace_id: trace_id || '', payload: {} }); } catch (e) {}
+      try { const srv = require('./server'); if (srv && srv.sendAgentCommand) pushed = await srv.sendAgentCommand(to_agent, { type: type || 'command', from_agent: agent_id, to_agent, payload_ref: payload_ref || '', trace_id: trace_id || '', payload: {} }); } catch (e) { console.warn('[mcp] WS 즉시 전달 실패 — DB 큐로만 전달된다:', e.message); }
       return { content: [{ type: 'text', text: JSON.stringify({ message_id: 'msg_' + Date.now().toString(36), delivered: pushed, delivery_method: pushed ? 'websocket' : 'queued' }) }] };
     }
     case 'agent.list': {
@@ -255,7 +255,7 @@ router.post('/mcp', authenticate, async (req, res) => {
       try {
         const parsed = result.content && result.content[0] && result.content[0].text;
         if (parsed) textContent = JSON.parse(parsed);
-      } catch (e) {}
+      } catch (e) { console.warn('[mcp] 결과 JSON 파싱 실패 — structuredContent 를 원본으로 반환:', e.message); }
       return res.json({ jsonrpc: '2.0', id: body.id, result: { content: result.content || [{ type: 'text', text: JSON.stringify(result, null, 2) }], structuredContent: textContent } });
     } catch (e) {
       const code = e.code || -32603;

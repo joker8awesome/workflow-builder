@@ -1,0 +1,179 @@
+# CLAUDE.md — 커멘드센터 팀 컨텍스트 (Claude Code용)
+
+> 이 파일은 Orca/Claude Code 세션에서 **자동으로 로드**되어 항상 기억됩니다.
+> 사용자가 "중지"라고 하기 전까지 계속 유지·참조할 것.
+
+---
+
+## 1. 프로젝트 개요
+
+- **이름**: 커멘드센터 (Command Center) — 워크플로우 빌더 프로젝트
+- **저장소**: github.com/joker8awesome/workflow-builder (커밋 84개 — 기준 `648c51e`)
+- **GitHub Pages**: https://joker8awesome.github.io/workflow-builder/
+- **서버**: VPS (Hostinger srv1803151) — Node.js + Express + PostgreSQL 17
+- **MCP**: https://187.127.124.16.sslip.io/mcp (12개 툴, Bearer 인증)
+
+---
+
+## 2. 현재 아키텍처
+
+```
+웹 UI (index.html 5,500줄) ──REST/WS──▶ Express (server.js 1,462줄, API 78개)
+  · 노드 9종 · 에이전트 팀 15명 · MCP · PWA        │
+  · 다크 테마 #00ff87 · 시스템 한글 폰트             ▼
+                                          PostgreSQL 17 (odds DB)
+에이전트 실행: Python (agent_orchestrator.py, .agentenv)
+MCP 서버: mcp-router.js (Streamable HTTP) + mcp_server.py (Python)
+```
+
+---
+
+## 3. 에이전트 팀 (15명 + 클로드 데스크톱 = 16)
+
+| ID | 이름 | 역할 | capabilities |
+|----|------|------|-------------|
+| ag_orch | 오케스트레이터 | 팀 총괄·분배·수렴 | orchestrate, delegate |
+| ag_researcher | 리서처 | 조사·수집·요약 | research, summarize |
+| ag_analyst | 분석가 | 데이터 분석·인사이트 | analyze, pattern |
+| ag_writer | 콘텐츠 작가 | 문서·보고서 작성 | write, draft |
+| ag_reviewer | 검토자 | 품질 검증·피드백 | review, verify |
+| ag_collector | 데이터 수집가 | 웹/API 수집 | crawl, collect |
+| ag_developer | 코드 개발자 | 코드 작성·수정 | code, refactor |
+| ag_tester | 테스터 | 테스트·회귀 검증 | test, regression |
+| ag_designer | 디자이너 | UI/UX 설계 | design, visualize |
+| ag_security | 보안 담당 | 취약점·PII 보호 | security, audit |
+| ag_communicator | 커뮤니케이터 | 외부 보고·알림 | report, notify |
+| ag_scheduler | 스케줄러 | 일정·크론·마감 | schedule, cron |
+| ag_integrator | 통합 담당 | MCP·API 연동 | integrate, api |
+| ag_archiver | 아카이버 | 기록·버전·지식 | archive, knowledge |
+| ag_auditor | 감사자 | 감사·준수 | audit, compliance |
+| ag_claude_desktop | 클로드 데스크톱 | 사용자 세션 (Claude Code) | — |
+
+**워크스페이스**: 각 에이전트는 /opt/data/agents/<id>/ (input/output/logs/workspace.md)
+**상태**: 대기/진행/검토/완료/블로커 (한글)
+
+---
+
+## 4. 협업 프로토콜
+
+### 메시지 3종
+- `command` — 실행 지시
+- `instruction` — 설정/지침
+- `report` — 결과 보고
+
+### 핵심 규칙
+1. **trace_id 필수 유지** — 보고에 원래 trace_id 사용
+2. **payload_ref로 데이터 참조** — 대용량은 참조만 전달
+3. **핸드오프 체인** — 작업 끝나면 다음 담당자에게 인계 (agent.send_message)
+4. **역할 라우팅** — /api/team/next/:agentId 로 다음 담당자 추천
+5. **작업 격리** — 각자 워크스페이스에서만 실행
+
+---
+
+## 5. MCP 툴 (12개)
+
+```
+workflow.list / execute / get_status / get_trace
+agent.whoami / list / send_message / tasks.list_pending / tasks.claim
+agent.payload.get / report / checkpoint
+```
+
+- 인증: `Authorization: Bearer wf_ak_...` 헤더
+- 엔드포인트: `https://187.127.124.16.sslip.io/mcp`
+
+---
+
+## 6. 진행 완료된 작업 (기억할 것)
+
+- ✅ MVP → 16차 고도화 (에이전트 협업/오케스트레이션/MCP)
+- ✅ 15명 에이전트 팀 구축 + 워크스페이스
+- ✅ MCP 외부 연결 (Claude Code, HTTPS, Let's Encrypt)
+- ✅ UX: 노드 팔레트/마퀴/플로팅바/스냅가이드/상태필터
+- ✅ 보안: CORS 제한, Bearer 인증, 시크릿 볼트 키 설정, 테스트 정리
+- ✅ node_count 버그 수정, 서버카드 https (커밋 `7b52bb3`)
+- ⚠️ DB 접속 파라미터화 — **`server.js`만 완료. `mcp-router.js`는 누락돼 있었음**
+  → 2026-08-15 수정했으나 **아직 미커밋·미배포**. 로컬 개발은 이게 배포돼야 가능
+- ⏸ `agent.list` 하드코딩 수정 (machine JSONB + capability/online_only 필터) — **미커밋·미배포**
+
+## 7. 진행 중 / 다음 작업
+
+- ⏳ **에이전트 메타데이터 채우기** — capabilities/tools/trust_score (지침서: 2026-08-15-agent-metadata-guide.md)
+- ⏳ 스펙 문서 갱신
+- 사용자가 지시할 때까지 대기
+
+## 8. 중요 경고
+
+1. **WF_MCP_OPEN 비활성 유지** — 인증 우회 금지 (Bearer 인증 필수)
+2. **WF_VAULT_KEY 설정됨** — 시크릿 볼트는 새 키 사용
+3. **야구 픽 프로젝트와 분리** — 커멘드센터는 야구 프로젝트와 무관
+4. **읽기 전용 점검 원칙** — 프로덕션 쓰기는 사용자 승인 후
+5. **키/토큰 절대 커밋 금지** — .mcp.json은 .gitignore에 있음
+
+---
+
+## 9. 실행 환경
+
+- 로컬 개발: Windows (D:\Comment_Center) — DB는 DATABASE_URL로 연결
+- VPS: pm2 workflow-builder online, scheduler.py 30초 폴링
+- 검증: PLAYWRIGHT_BROWSERS_PATH=/opt/data/.cache/ms-playwright ./.venv/bin/python
+
+---
+
+## 10. 작업 기록 규칙 (중요)
+
+> 사용자 지시 (2026-08-15): **이 파일(`deepbot_action.md`)에 작업 내용을 계속 갱신**하라.
+> 사용자가 "중지"라고 할 때까지 유지.
+
+### 기록 규칙
+1. **모든 작업 수행 후** 이 파일의 `## 작업 로그` 섹션에 기록
+2. 기록 형식: 날짜 · 작업 내용 · 결과 (완료/진행/차단)
+3. 프로젝트 상태 변경 시 상단 섹션도 함께 갱신
+4. 새 작업 지시를 받으면 이 파일을 먼저 읽고 컨텍스트 파악
+
+## 작업 로그
+
+| 날짜 | 작업 | 결과 |
+|------|------|------|
+| 2026-08-15 | 팀 컨텍스트 파일 생성 (deepbot_action.md) | ✅ 완료 |
+| 2026-08-15 | 스펙 문서 검토 — 라이브 시스템 + 저장소 대조 (`2026-08-15-spec-review.md`) | ✅ 완료 |
+| 2026-08-15 | 저장소 로컬 체크아웃 (`D:\Comment_Center`) | ✅ 완료 |
+| 2026-08-15 | 키 노출 점검 — 커밋 84개 전수 검사, 실제 키 없음 확인 | ✅ 완료 (이상 없음) |
+| 2026-08-15 | 에이전트 메타데이터 지침서 검토·개정 v2 (`2026-08-15-agent-metadata-guide.md`) | ✅ 완료 |
+| 2026-08-15 | `agent.list` 하드코딩 발견 — 데이터만 채워선 필터 동작 불가 확인 | ✅ 완료 (원인 규명) |
+| 2026-08-15 | upstream 동기화 — 81→84 커밋 ff. 중복 수정분은 upstream 채택, 내 변경은 `stash@{0}` 보존 | ✅ 완료 |
+| 2026-08-15 | `mcp-router.js` DB 풀 파라미터화 — upstream 누락분 (server.js만 적용돼 있었음) | ✅ 완료 (미커밋) |
+| 2026-08-15 | `mcp-router.js` `agent.list` 재작성 — machine JSONB 읽기 + capability/online_only 필터 | ✅ 완료 (미커밋) |
+| 2026-08-15 | `.env.example` 작성 (환경변수 7종 문서화) | ✅ 완료 |
+| 2026-08-15 | 에이전트 프로덕션 스냅샷 확보 (`ops/agents-before.json`, 16명) | ✅ 완료 |
+| 2026-08-15 | 메타데이터 주입 스크립트 작성 (`ops/fill-agent-metadata.js`) + dry-run 검증 16/16 | ✅ 완료 |
+| 2026-08-15 | **메타데이터 프로덕션 반영** (승인 후 `--apply`) — 16/16 성공 | ✅ 완료 |
+| 2026-08-15 | 반영 검증 — machine 3키 16/16, **machine 외 필드 변경 없음**, 기존 키 전원 보존 | ✅ 완료 |
+| 2026-08-15 | 커밋 `126b5c1` (브랜치 `fix/agent-list-and-db-pool`, 미푸시) | ✅ 완료 |
+| 2026-08-15 | Hermes 봇 인계 문서 작성 (`2026-08-15-hermes-handoff.md`) + 패치 `ops/mcp-router-fix.patch` | ✅ 완료 |
+| 2026-08-15 | **VPS 배포** (Hermes 수행, 커밋 `06acf07`) — capability 필터 실동작 확인 | ✅ 완료 |
+| 2026-08-15 | 배포 독립 검증 (로컬 MCP) — `capability=verify` → 3명 정확 | ✅ 완료 |
+| 2026-08-15 | **`online` 지표가 영구 false임을 발견** — `agent_sessions.status`에 `running/working/waiting`을 쓰는 코드가 없음 | ⚠️ 미해결 (아래 참조) |
+| 2026-08-15 | 파생 발견: `/api/team/status`의 `active_sessions`도 동일 사유로 **항상 0** (기존 버그) | ⚠️ 미해결 |
+| 2026-08-15 | 조치 방침 확정 — **1번 정공법** (오케스트레이터가 running 기록) | ✅ 사용자 결정 |
+| 2026-08-15 | `agent_orchestrator.py` 수정 — `ACTIVE_STATUSES` 어휘 + running/done/failed 전이 + 예외·중단 시 고착 방지 sweep + DSN 파라미터화 | ✅ 완료 (커밋 `75cd44a`, 미배포) |
+| 2026-08-15 | `ops/test-session-status.py` 작성 — DB 없이 전이·어휘 일치·예외 경로 검증, **10/10 PASS** | ✅ 완료 |
+| 2026-08-15 | Hermes 지시서 #2 작성 (`2026-08-15-hermes-handoff-2.md`) + 패치 | ✅ 완료 |
+| 2026-08-15 | 브랜치 `fix/agent-list-and-db-pool` 푸시 (`75cd44a`) — 이제 Hermes가 `git pull` 가능 | ✅ 완료 |
+| 2026-08-15 | main(`06acf07`)과 대조 — `mcp-router.js`는 **주석 차이뿐, 코드 동일** (충돌 없음) | ✅ 확인 |
+| 2026-08-15 | **main 머지 완료** (`f0894a3`) — `mcp-router.js` 충돌은 main 버전 채택(코드 동일, 주석만 상이) | ✅ 완료 |
+| 2026-08-15 | 지시서 #2를 `git pull` 방식으로 갱신 — 수동 패치는 fallback으로 접어둠, 롤백도 git 기반으로 교체 | ✅ 완료 |
+| 2026-08-15 | Hermes 전달 시도 — **MCP 채널 없음 확인** (등록 에이전트 16명에 hermes 없음, `agent.send_message` 주소 부재) | ℹ️ 확인 |
+| 2026-08-15 | 대안 경로로 전달 — 지시서 #1·#2 + 로드맵 + 스펙검토를 저장소에 푸시 (`c80526a`) | ✅ 완료 |
+| 2026-08-15 | **오케스트레이터 VPS 배포 + 실행 중 검증** | ⏸ 대기 — Hermes 인계 (`git pull origin main` → `c80526a`) |
+| 2026-08-15 | `agent.list` 배포 후 검증 (capability 필터) | ⏸ 배포 대기 |
+
+> 이후 작업은 이 표에 계속 추가할 것.
+
+### 미해결 / 확인 필요
+
+| 항목 | 내용 |
+|------|------|
+| **🔴 `online` / `active_sessions` 영구 0 (확정)** | `agent_sessions.status`에 실제로 쓰이는 값은 `idle` 뿐이다(라이브 19세션 전부 `idle`). 코드 전수 확인 결과 `running`/`working`/`waiting`을 **쓰는 곳이 한 군데도 없다** — `agent_orchestrator.py:52`는 `'idle'` 하드코딩, `server.js:777·816`은 `status \|\| 'idle'`, `index.html`은 `idle`/`ok`/`fail`만 전송. 따라서 ① `agent.list`의 `online`은 **항상 false** ② `/api/team/status`의 `active_sessions`도 같은 필터라 **항상 0** = 팀 대시보드 실시간 ●○ 표시가 **처음부터 동작한 적 없음**(기존 버그). 상태 어휘를 정의하고 오케스트레이터가 실제로 기록하도록 고쳐야 함 |
+| 8/14 22:28 대량 쓰기 | 워크플로우 50행이 서버 부팅 +11초에 일괄 갱신. 침해 정황 없음(배포 작업 중). 원인 코드 미특정 — `updated_at` 트리거 확인 SQL은 spec-review §2 참조 |
+| `WF_ACCESS_TOKEN` | 미설정이면 `/api/agents` POST/DELETE가 무인증 노출. `npx pm2 env 0`로 확인 필요 |
+| 템플릿 중복 | `wf_tpl_team` 과 `wf_tpl_team_mstiqejr` 등 각 2벌 — 정본 결정 필요 |

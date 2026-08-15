@@ -104,6 +104,37 @@ def request_approval(wf_id, agent_id, action, context):
             print(f"[승인] 요청 실패: {e}")
         return None
 
+def wake_agent(agent_id, mid, trace, ref):
+    """수신 에이전트를 깨운다 — server.js 가 게이트웨이 봇으로 메시지를 보낸다.
+
+    텔레그램 로직을 여기 다시 구현하지 않는다. 알림용 봇과 깨우기용 봇이 다르고,
+    그 구분은 notify.js 한 곳에만 둔다.
+    """
+    import urllib.request
+    payload = json.dumps({
+        "message_id": mid, "trace_id": trace or "", "payload_ref": ref or "",
+        "reason": "큐에 새 지시가 적재됨",
+    }).encode()
+    headers = {"Content-Type": "application/json"}
+    if SCHEDULER_KEY:
+        headers["Authorization"] = "Bearer " + SCHEDULER_KEY
+    req = urllib.request.Request(
+        f"{API_BASE}/api/agents/{agent_id}/wake", data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            out = json.loads(r.read().decode())
+            if out.get("woken"):
+                print(f"[깨움] {agent_id} — msg {mid}")
+            else:
+                print(f"[깨움] {agent_id} 실패({out.get('reason')}) — "
+                      "지시가 큐에 쌓이기만 한다. WF_GATEWAY_TOKEN/CHAT_ID 확인할 것")
+    except Exception as e:
+        code = getattr(e, 'code', None)
+        if code == 401:
+            print("[깨움] 401 — WF_SCHEDULER_KEY 확인 필요")
+        else:
+            print(f"[깨움] 요청 실패: {e}")
+
 def poll_agent_messages(seen, since):
     """미처리 명령을 감지해 사용자에게 알린다.
 
@@ -144,6 +175,10 @@ def poll_agent_messages(seen, since):
         request_approval(
             wf_id=trace or "-", agent_id=to, action="workflow.execute",
             context=f"{frm} → {to} / {mtype} / payload_ref={ref or '-'} / msg_id={mid}")
+        # 감지·알림만으로는 아무 일도 일어나지 않는다.
+        # 수신자는 list_pending 폴링 루프가 없고 텔레그램 메시지로 깨어나므로,
+        # 여기서 깨워야 실제로 지시를 집어간다. 이게 없으면 사람이 알려줘야 한다.
+        wake_agent(to, mid, trace, ref)
 
 def main():
     print("워크플로우 스케줄러 시작 (30초 간격)")

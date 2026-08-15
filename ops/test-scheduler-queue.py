@@ -73,5 +73,19 @@ check('가드가 걸린 쿼리로 조회하면 알림이 나간다', len(sent) =
 scheduler.poll_agent_messages(seen, datetime.datetime.now())
 check('같은 메시지를 두 번 알리지 않는다 (seen)', len(sent) == 1, str(len(sent)))
 
+print('\n5) 감지한 뒤 수신자를 깨우는가')
+# 감지·알림만으로는 아무 일도 일어나지 않는다. 할매봇은 list_pending 폴링 루프가
+# 없고 텔레그램 메시지로 세션이 시작되므로, 깨우지 않으면 큐에 쌓이기만 한다.
+# 실제로 지시 3건이 그 상태로 남아 사람이 알려줘야 진행됐다.
+check('wake_agent 함수가 있다', 'def wake_agent(' in SRC)
+check('감지 직후 호출한다',
+      re.search(r'request_approval\([^)]*\)\s*\n(?:\s*#[^\n]*\n)*\s*wake_agent\(', SRC) is not None,
+      '알림만 하고 깨우지 않으면 자동화가 절반에서 멈춘다')
+check('텔레그램을 파이썬에 재구현하지 않는다',
+      '/wake' in SRC and 'api.telegram.org' not in SRC,
+      '알림용 봇과 깨우기용 봇의 구분은 notify.js 한 곳에만 둔다')
+check('깨우기 실패가 루프를 멈추지 않는다',
+      re.search(r'def wake_agent\(.*?except Exception', SRC, re.S) is not None)
+
 print('\n' + (f'실패 {len(fails)}건: ' + ', '.join(fails) if fails else '전부 통과'))
 sys.exit(1 if fails else 0)

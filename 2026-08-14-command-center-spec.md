@@ -140,7 +140,7 @@ GET  /.well-known/mcp-server-card
 
 ---
 
-## 8. DB 스키마 (26 테이블)
+## 8. DB 스키마 (실측 20 테이블)
 
 | 테이블 | 용도 | 레코드 |
 |--------|------|--------|
@@ -160,6 +160,20 @@ GET  /.well-known/mcp-server-card
 | audit_logs | 감사 로그 | - |
 | wf_templates | 템플릿 마켓 | - |
 | llm_cache | semantic cache | - |
+
+> **2026-08-15 실측 정정.** 이전에 "26 테이블"이라 적혀 있었으나 실제는 **20개**다.
+> 전체 스키마는 `ops/schema.sql` 에 있다 (`pg_dump --schema-only`, 데이터 없음).
+>
+> ⚠️ **`odds` DB 는 다른 프로젝트와 공유한다.** 20개 중 `games` · `odds_snapshots`
+> 두 개는 커멘드센터 것이 아니다(야구 픽 프로젝트). 따라서:
+> - DB 전체를 `pg_dump` / 복원하면 **다른 프로젝트 데이터까지 건드린다**
+> - 백업·복구는 커멘드센터 테이블만 대상으로 하는 편이 안전하다
+> - 로컬 개발 시에는 `ops/schema.sql` 로 빈 DB 를 만들면 된다
+>
+> 커멘드센터 테이블 18개:
+> `agents` `agent_cards` `agent_checkpoints` `agent_credentials` `agent_messages`
+> `agent_sessions` `agent_spans` `audit_logs` `llm_cache` `wf_approvals` `wf_comments`
+> `wf_knowledge` `wf_results` `wf_runlogs` `wf_templates` `wf_tests` `wf_versions` `wf_workflows`
 
 ---
 

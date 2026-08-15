@@ -774,6 +774,25 @@ app.get('/api/telegram/status', requireScope(pool, 'mcp:read', { allowAccessToke
   });
 });
 
+// 에이전트 깨우기 — 큐에 지시가 들어왔을 때 scheduler 가 부른다.
+// 알림(커멘드센터 봇)과 깨우기(게이트웨이 봇)는 목적도 수신자도 다르므로 분리한다.
+app.post('/api/agents/:id/wake', requireScope(pool, 'mcp:execute', { allowAccessToken: true }), async (req, res) => {
+  try {
+    const { reason, trace_id, payload_ref, message_id } = req.body || {};
+    const lines = [
+      `[자동] ${req.params.id} 앞으로 지시가 도착했습니다.`,
+      message_id ? `msg ${message_id}` : null,
+      trace_id ? `trace ${trace_id}` : null,
+      payload_ref ? `참조: ${payload_ref}` : null,
+      reason || null,
+      '',
+      'git pull origin main 후 해당 지시서를 읽고 수행하세요.',
+    ].filter(Boolean);
+    const out = await notify.wakeAgent(lines.join('\n'));
+    res.json({ success: true, woken: out.sent, reason: out.reason || null });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // 승인 결정 기록 — 텔레그램 버튼/웹 UI 양쪽에서 쓴다
 app.post('/api/approvals/:id/decide', requireAuth, async (req, res) => {
   try {

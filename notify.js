@@ -92,6 +92,47 @@ async function report({ agent, action, status, detail }) {
   return send(text);
 }
 
+/**
+ * 에이전트를 깨운다 — 큐에 지시가 들어왔을 때 쓴다.
+ *
+ * 할매봇(ag_hermes)은 Hermes 텔레그램 게이트웨이가 24/7 상주하다가
+ * **메시지가 오면 세션이 시작되는** 구조다. list_pending 폴링 루프가 없어서,
+ * 큐에 지시를 넣어도 사람이 알려주기 전까지는 집어가지 않았다.
+ * 자동화가 "적재·감지·알림까지 되고 픽업만 안 되는" 상태로 남아 있던 이유다.
+ *
+ * 그래서 커멘드센터 봇이 아니라 **게이트웨이 봇**으로 보낸다.
+ * 커멘드센터 봇은 사용자 알림용이고, 그쪽으로 보내면 할매봇이 깨지 않는다.
+ *
+ * 게이트웨이 토큰이 없으면 조용히 건너뛴다 — 깨우기 실패가 본래 흐름을 막으면 안 된다.
+ */
+async function wakeAgent(text) {
+  const gToken = process.env.WF_GATEWAY_TOKEN || '';
+  const gChat = process.env.WF_GATEWAY_CHAT_ID || '';
+  if (!gToken || !gChat) {
+    console.warn('[wake] WF_GATEWAY_TOKEN/CHAT_ID 미설정 — 에이전트를 깨울 수 없다. ' +
+      '큐에 지시가 쌓여도 사람이 알려줘야 한다');
+    return { sent: false, reason: 'not_configured' };
+  }
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${gToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // 게이트웨이 채널은 사람이 읽는 곳이 아니라 트리거용이므로 평문으로 보낸다
+      body: JSON.stringify({ chat_id: gChat, text, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      console.warn('[wake] 전송 실패', r.status, t.slice(0, 200));
+      return { sent: false, reason: `http_${r.status}` };
+    }
+    return { sent: true };
+  } catch (e) {
+    console.warn('[wake] 전송 오류:', e.message);
+    return { sent: false, reason: e.message };
+  }
+}
+
 /** 텔레그램 API 호출 공통부 */
 async function tg(method, body) {
   if (!TOKEN()) return { ok: false, reason: 'not_configured' };
@@ -155,6 +196,6 @@ function setWebhook(url, secret) {
 }
 
 module.exports = {
-  send, approvalRequest, report, enabled, esc,
+  send, approvalRequest, report, enabled, esc, wakeAgent,
   tg, answerCallback, resolveMessage, setWebhook,
 };

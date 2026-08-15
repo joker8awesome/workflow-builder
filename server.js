@@ -753,6 +753,72 @@ app.get('/api/approvals/pending', async (req, res) => {
 app.get('/api/approvals/config', (req, res) => {
   res.json({ success: true, ...approvalGate.describe(), notify_enabled: notify.enabled() });
 });
+
+// === 텔레그램 웹훅 — 승인 버튼 처리 ===
+//
+// 이 엔드포인트는 텔레그램이 호출해야 하므로 인터넷에 공개된다.
+// 따라서 두 겹으로 막는다. 둘 중 하나라도 없으면 승인 위조가 가능하다:
+//   1) X-Telegram-Bot-Api-Secret-Token — setWebhook 시 심은 값과 일치해야 함
+//   2) chat_id — 지정된 채팅에서 온 것만 허용
+app.post('/api/telegram/webhook', async (req, res) => {
+  const secret = process.env.WF_TELEGRAM_WEBHOOK_SECRET || '';
+  if (!secret) {
+    console.warn('[tg] WF_TELEGRAM_WEBHOOK_SECRET 미설정 — 웹훅 거부');
+    return res.sendStatus(403);
+  }
+  if (req.headers['x-telegram-bot-api-secret-token'] !== secret) {
+    console.warn('[tg] secret 불일치 — 거부');
+    return res.sendStatus(403);
+  }
+  // 텔레그램에는 항상 200을 빨리 돌려준다. 실패해도 재전송 폭주를 만들지 않는다.
+  res.sendStatus(200);
+
+  try {
+    const cq = req.body && req.body.callback_query;
+    if (!cq) return;
+
+    const allowed = String(process.env.WF_TELEGRAM_CHAT_ID || '');
+    const from = String(cq.message?.chat?.id ?? '');
+    if (allowed && from !== allowed) {
+      console.warn(`[tg] 허용되지 않은 채팅 ${from} — 무시`);
+      await notify.answerCallback(cq.id, '권한이 없습니다', true);
+      return;
+    }
+
+    // callback_data 형식: ap:<승인id>:<approved|rejected>
+    const m = /^ap:(\d+):(approved|rejected)$/.exec(cq.data || '');
+    if (!m) return;
+    const [, id, decision] = m;
+    const who = cq.from?.username ? '@' + cq.from.username : (cq.from?.first_name || 'user');
+
+    const { rowCount } = await pool.query(
+      `UPDATE wf_approvals SET decision=$1, approver=$2, decided_at=now()
+       WHERE id=$3 AND decision='pending'`,
+      [decision, who, id]
+    );
+
+    if (!rowCount) {
+      // 이미 처리된 건 — 두 사람이 동시에 눌렀거나 중복 클릭
+      const { rows } = await pool.query('SELECT decision, approver FROM wf_approvals WHERE id=$1', [id]);
+      const cur = rows[0];
+      await notify.answerCallback(cq.id,
+        cur ? `이미 ${cur.decision === 'approved' ? '승인' : '거부'}됨 (${cur.approver || '-'})` : '없는 승인 건',
+        true);
+      return;
+    }
+
+    await notify.answerCallback(cq.id, decision === 'approved' ? '승인했습니다' : '거부했습니다');
+    // 버튼을 없애고 결과를 남긴다 — 같은 건을 다시 누를 수 없도록
+    await notify.resolveMessage(
+      cq.message.chat.id, cq.message.message_id,
+      cq.message.text ? notify.esc(cq.message.text) : '승인 요청',
+      decision, who
+    );
+    console.log(`[tg] 승인 ${id} → ${decision} (${who})`);
+  } catch (e) {
+    console.warn('[tg] 웹훅 처리 오류:', e.message);
+  }
+});
 app.get('/api/approvals', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM wf_approvals ORDER BY created_at DESC LIMIT 100');

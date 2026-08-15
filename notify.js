@@ -92,4 +92,69 @@ async function report({ agent, action, status, detail }) {
   return send(text);
 }
 
-module.exports = { send, approvalRequest, report, enabled, esc };
+/** 텔레그램 API 호출 공통부 */
+async function tg(method, body) {
+  if (!TOKEN()) return { ok: false, reason: 'not_configured' };
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${TOKEN()}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      console.warn(`[notify] ${method} 실패`, r.status, t.slice(0, 200));
+      return { ok: false, reason: `http_${r.status}` };
+    }
+    return { ok: true, result: (await r.json().catch(() => ({}))).result };
+  } catch (e) {
+    console.warn(`[notify] ${method} 오류:`, e.message);
+    return { ok: false, reason: e.message };
+  }
+}
+
+/**
+ * 버튼 눌림에 응답한다. 이걸 보내지 않으면 사용자 화면에서 버튼이 계속 로딩 상태로 남는다.
+ * 텔레그램은 약 10초 안의 응답을 기대한다.
+ */
+function answerCallback(callbackQueryId, text, alert = false) {
+  return tg('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    text: text || '',
+    show_alert: Boolean(alert),
+  });
+}
+
+/**
+ * 결정이 끝난 메시지를 갱신하고 버튼을 없앤다.
+ * 버튼이 남아 있으면 같은 건을 다시 누를 수 있어 혼란스럽다.
+ */
+function resolveMessage(chatId, messageId, originalText, verdict, who) {
+  const mark = verdict === 'approved' ? '✅ 승인됨' : '❌ 거부됨';
+  return tg('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text: `${originalText}\n\n━━━━━━\n${esc(mark)}${who ? ` · ${esc(who)}` : ''}`,
+    parse_mode: 'MarkdownV2',
+    reply_markup: { inline_keyboard: [] },
+  });
+}
+
+/**
+ * 웹훅 등록. 텔레그램이 보내는 요청임을 확인할 secret_token 을 함께 심는다.
+ * 이 토큰이 없으면 웹훅 URL 을 아는 누구나 승인을 위조할 수 있다.
+ */
+function setWebhook(url, secret) {
+  return tg('setWebhook', {
+    url,
+    secret_token: secret,
+    allowed_updates: ['callback_query'],
+    drop_pending_updates: true,
+  });
+}
+
+module.exports = {
+  send, approvalRequest, report, enabled, esc,
+  tg, answerCallback, resolveMessage, setWebhook,
+};

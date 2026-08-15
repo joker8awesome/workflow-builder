@@ -59,6 +59,22 @@ app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallba
 const notify = require('./notify');
 const { parseJsonbStrict } = require('./jsonb');
 const { requireScope } = require('./auth-credential');
+
+// === 팀 도구 전환 — 변경 API 인증 (단계적 적용) ===
+// 무인증 변경 라우트가 23개 남아 있고, 웹 UI 가 아직 키 없이 호출한다.
+// 한 번에 켜면 UI 가 전부 401 이 되므로 환경변수로 분리한다:
+//   1) 이 코드를 배포한다 (기본 꺼짐 — 동작 변화 없음)
+//   2) 프론트가 키를 보내는지 확인한다
+//   3) WF_REQUIRE_AUTH_ALL=1 로 켠다  (재배포 없이 pm2 restart --update-env)
+//   4) 문제가 있으면 즉시 끈다
+const REQUIRE_AUTH_ALL = process.env.WF_REQUIRE_AUTH_ALL === '1';
+function maybeAuth(scope) {
+  const mw = requireScope(pool, scope || 'mcp:execute', { allowAccessToken: true });
+  return function (req, res, next) {
+    if (!REQUIRE_AUTH_ALL) return next();
+    return mw(req, res, next);
+  };
+}
 const approvalGate = require('./approval-gate');
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool(process.env.DATABASE_URL
@@ -261,7 +277,7 @@ function broadcastWf(id, data) {
 }
 
 // === 에이전트 보고 API — trace_id로 상태 갱신 + 결과 저장 ===
-app.post('/api/agent/report', async (req, res) => {
+app.post('/api/agent/report', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { trace_id, status, summary, result_ref, agent_id } = req.body || {};
     if (!trace_id) return res.status(400).json({ success: false, error: 'trace_id required' });
@@ -343,7 +359,7 @@ function broadcastAgentStatus() {
 }
 
 // === 에이전트 명령 전송 API — DB 기록 + WS push ===
-app.post('/api/agent/command', async (req, res) => {
+app.post('/api/agent/command', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { to_agent, msg_type, payload_ref, trace_id, payload, from_agent } = req.body || {};
     if (!to_agent) return res.status(400).json({ success: false, error: 'to_agent required' });
@@ -496,7 +512,7 @@ function redactPII(str) {
 function maskAudit(text) { return redactPII(text || ''); }
 
 // === LLM 판단 API (decision 노드: llm_prompt) ===
-app.post('/api/ai/decide', async (req, res) => {
+app.post('/api/ai/decide', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { prompt, context } = req.body || {};
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
@@ -549,7 +565,7 @@ app.post('/api/webhook/:token', async (req, res) => {
 });
 
 // === 실행 스크립트 API (노드 액션: script) ===
-app.post('/api/exec', async (req, res) => {
+app.post('/api/exec', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { script, args } = req.body || {};
     if (!script || typeof script !== 'string') {
@@ -606,7 +622,7 @@ app.post('/api/workflows/:id/comments', requireAuth, async (req, res) => {
 });
 
 // === 실행 결과 저장/조회 ===
-app.post('/api/workflows/:id/results', async (req, res) => {
+app.post('/api/workflows/:id/results', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { node_id, result, run_at } = req.body || {};
     await pool.query(
@@ -830,7 +846,7 @@ app.get('/api/approvals', async (req, res) => {
 });
 
 // === 에이전트 지식 메모리 API (MCP 스타일 공유) ===
-app.post('/api/knowledge', async (req, res) => {
+app.post('/api/knowledge', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { agent_id, wf_id, note, tags } = req.body || {};
     if (!note) return res.status(400).json({ success: false, error: 'note required' });
@@ -889,7 +905,7 @@ app.get('/api/cards', async (req, res) => {
 
 // === 에이전트 세션/메시지 API ===
 // 세션 생성 — 15개 팀 부트스트랩용
-app.post('/api/sessions', async (req, res) => {
+app.post('/api/sessions', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { agent_id, status, node_id } = req.body || {};
     if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
@@ -919,7 +935,7 @@ app.get('/api/messages', async (req, res) => {
     res.json({ success: true, messages: rows });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { msg_type, from_agent, to_agent, session_id, payload } = req.body || {};
     if (!from_agent || !to_agent) return res.status(400).json({ success: false, error: 'from/to required' });
@@ -932,7 +948,7 @@ app.post('/api/messages', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 // 세션 상태 갱신
-app.put('/api/sessions/:id', async (req, res) => {
+app.put('/api/sessions/:id', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { status } = req.body || {};
     await pool.query('UPDATE agent_sessions SET status = $1, updated_at = now() WHERE id = $2', [status || 'idle', req.params.id]);
@@ -958,7 +974,7 @@ function decryptSecret(data) {
 }
 
 // === PII 레드액션 API — LLM 프롬프트 전 클라이언트가 호출 ===
-app.post('/api/redact', async (req, res) => {
+app.post('/api/redact', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { text } = req.body || {};
     res.json({ success: true, redacted: redactPII(text), original_len: String(text || '').length });
@@ -1011,7 +1027,7 @@ app.post('/api/credentials', requireAuth, async (req, res) => {
 });
 
 // === 2. 감사 로그 API ===
-app.post('/api/audit', async (req, res) => {
+app.post('/api/audit', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { actor, agent_id, resource, action, detail } = req.body || {};
     await pool.query(
@@ -1049,7 +1065,7 @@ app.post('/api/templates', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/templates/:id/install', async (req, res) => {
+app.post('/api/templates/:id/install', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     await pool.query('UPDATE wf_templates SET installs = installs + 1 WHERE id = $1', [req.params.id]);
     const { rows } = await pool.query('SELECT data FROM wf_templates WHERE id = $1', [req.params.id]);
@@ -1058,7 +1074,7 @@ app.post('/api/templates/:id/install', async (req, res) => {
 });
 
 // === 4. LLM semantic cache API ===
-app.post('/api/cache/get', async (req, res) => {
+app.post('/api/cache/get', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { prompt, model } = req.body || {};
     if (!prompt) return res.json({ success: true, hit: false });
@@ -1068,7 +1084,7 @@ app.post('/api/cache/get', async (req, res) => {
     res.json({ success: true, hit: rows.length > 0, response: rows[0] ? rows[0].response : null, hash });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/cache/put', async (req, res) => {
+app.post('/api/cache/put', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { prompt, model, response } = req.body || {};
     const hash = require('crypto').createHash('sha256').update(prompt + (model || '')).digest('hex').slice(0, 16);
@@ -1095,7 +1111,7 @@ app.get('/api/events', async (req, res) => {
 // 실행 결과 저장 시 실패면 audit에 기록 (기존) + 클라이언트가 WS로 알림
 
 // === 3. 신뢰도/자율성: ai/decide 응답에 confidence 포함 ===
-app.post('/api/ai/decide', async (req, res) => {
+app.post('/api/ai/decide', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { prompt, context, model } = req.body || {};
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
@@ -1176,7 +1192,7 @@ app.post('/api/workflows/:id/schedule', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 // 자연어 → cron 변환 (간단 파서)
-app.post('/api/schedule/parse', async (req, res) => {
+app.post('/api/schedule/parse', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { text } = req.body || {};
     const t = String(text || '').trim().toLowerCase();
@@ -1191,7 +1207,7 @@ app.post('/api/schedule/parse', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 // 파일 감지 트리거 — 워크스페이스 새 파일 확인 (간단: 최근 파일 목록)
-app.post('/api/workflows/:id/run', async (req, res) => {
+app.post('/api/workflows/:id/run', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { trigger } = req.body || {};
     const { rows } = await pool.query('SELECT id FROM wf_workflows WHERE id = $1', [req.params.id]);
@@ -1339,7 +1355,7 @@ const EXAMPLE_WFS = [
   },
 ];
 app.get('/api/examples', (req, res) => res.json({ success: true, examples: EXAMPLE_WFS }));
-app.post('/api/examples/install', async (req, res) => {
+app.post('/api/examples/install', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { id } = req.body || {};
     const ex = EXAMPLE_WFS.find(w => w.id === id);
@@ -1382,7 +1398,7 @@ function rateLimit(key, max = 60, windowMs = 60000) {
 }
 
 // === 데이터 커넥터 API — CSV/JSON/API/DB 입력 ===
-app.post('/api/connector', async (req, res) => {
+app.post('/api/connector', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     if (!rateLimit(req.ip || 'connector')) return res.status(429).json({ success: false, error: 'rate limited' });
     const { type, config } = req.body || {};
@@ -1444,7 +1460,7 @@ const MODEL_ROUTES = {
 app.get('/api/model-routes', (req, res) => res.json({ success: true, routes: MODEL_ROUTES }));
 
 // === 결과 피드백 루프 — 실행 결과를 지식으로 저장 ===
-app.post('/api/feedback', async (req, res) => {
+app.post('/api/feedback', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { wf_id, node_id, summary, status } = req.body || {};
     if (!wf_id || !summary) return res.json({ success: false, error: 'wf_id/summary 필요' });
@@ -1513,7 +1529,7 @@ const WF_SCHEMA_EXAMPLE = `{
   ]
 }`;
 
-app.post('/api/ai/generate', async (req, res) => {
+app.post('/api/ai/generate', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { prompt } = req.body || {};
     if (!prompt || !prompt.trim()) {

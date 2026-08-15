@@ -22,31 +22,11 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ALLOWED_PUBLIC = {
   '/api/telegram/webhook': '텔레그램이 호출한다. 자체 secret_token + chat_id 검증이 있다',
   '/api/webhook/:token': 'URL 의 token 자체가 자격이다',
+  '/api/approvals': '⚠ 승인 요청 생성. scheduler.py 가 인증 없이 POST 한다. '
+    + '악용 시 사용자 텔레그램에 알림을 다량 보낼 수 있다 — 스케줄러에 키를 주고 닫을 것',
 
-  // --- 아래는 웹 UI 가 인증 없이 호출 중이라 지금 막으면 UI 가 깨진다 ---
-  // 팀 도구 전환 3단계(REST 전체 스코프 적용)에서 프론트 키 전달과 함께 처리한다.
-  // 2026-08-15-team-tool-plan.md 참조.
-  '/api/ai/generate': '⚠ 유료 LLM 호출. UI 사용 중 — 팀 도구 3단계에서 보호할 것',
-  '/api/ai/decide': '⚠ 유료 LLM 호출. UI 사용 중 — 팀 도구 3단계에서 보호할 것',
-  '/api/exec': '⚠ UI 사용 중 — 팀 도구 3단계',
-  '/api/connector': 'rateLimit 있음. UI 사용 중 — 팀 도구 3단계',
-  '/api/agent/report': 'UI/에이전트 사용 중 — 팀 도구 3단계',
-  '/api/agent/command': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/workflows/:id/results': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/workflows/:id/run': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/approvals': '에이전트·스케줄러가 승인 요청 생성. 결정(/decide)은 인증 필요',
-  '/api/knowledge': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/sessions': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/sessions/:id': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/messages': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/redact': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/audit': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/templates/:id/install': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/cache/get': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/cache/put': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/schedule/parse': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/examples/install': 'UI 사용 중 — 팀 도구 3단계',
-  '/api/feedback': 'UI 사용 중 — 팀 도구 3단계',
+  // 아래 라우트들은 maybeAuth 로 감싸져 WF_REQUIRE_AUTH_ALL=1 이면 인증이 걸린다.
+  // 플래그가 꺼져 있을 때만 무인증이므로 이 목록에는 넣지 않는다.
 };
 
 let fails = [];
@@ -58,14 +38,20 @@ function check(name, cond, detail) {
 // 인라인 미들웨어 형태
 const routes = [];
 for (const m of SRC.matchAll(/app\.(post|put|delete|patch)\(\s*'([^']+)'\s*,([^\n]*)/g)) {
-  routes.push({ method: m[1].toUpperCase(), path: m[2], guarded: /requireAuth|requireScope/.test(m[3]) });
+  const rest = m[3];
+  routes.push({
+    method: m[1].toUpperCase(), path: m[2],
+    guarded: /requireAuth|requireScope/.test(rest),
+    conditional: /maybeAuth/.test(rest),   // WF_REQUIRE_AUTH_ALL=1 일 때만 적용
+  });
 }
 // 별도 줄로 거는 형태: app.post('/x', requireAuth);
 const preGuarded = new Set(
   [...SRC.matchAll(/app\.(?:post|put|delete|patch)\('([^']+)',\s*requireAuth\);/g)].map(m => m[1])
 );
 
-const unguarded = routes.filter(r => !r.guarded && !preGuarded.has(r.path));
+const unguarded = routes.filter(r => !r.guarded && !r.conditional && !preGuarded.has(r.path));
+const conditional = [...new Set(routes.filter(r => r.conditional).map(r => r.path))];
 const paths = [...new Set(unguarded.map(r => r.path))];
 
 console.log(`변경 라우트 ${routes.length}개 · 인증 없음 ${paths.length}개\n`);
@@ -88,8 +74,17 @@ for (const p of COSTLY) {
     r ? '외부 LLM 을 호출한다. 무인증이면 공개 LLM 프록시가 된다' : '');
 }
 
+console.log('\n4) 플래그로 보호되는 라우트 (팀 도구 3단계)');
+check('조건부 보호 라우트가 존재', conditional.length > 0,
+  'maybeAuth 로 감싼 라우트가 없다. 3단계가 되돌려졌는지 확인할 것');
+console.log(`         ${conditional.length}개가 maybeAuth 로 감싸져 있다.`);
+console.log('         WF_REQUIRE_AUTH_ALL=1 이어야 실제로 인증이 걸린다.');
+console.log('         플래그가 꺼져 있는 동안은 여전히 무인증이다 — 배포만으로 닫히지 않는다.');
+
 console.log('\n' + (fails.length ? `실패 ${fails.length}건` : '전부 통과'));
-if (Object.values(ALLOWED_PUBLIC).some(v => v.startsWith('⚠'))) {
-  console.log('\n⚠ ALLOWED_PUBLIC 에 유료 LLM 라우트가 남아 있다 (팀 도구 3단계 대상)');
+const warned = Object.entries(ALLOWED_PUBLIC).filter(([, v]) => v.startsWith('⚠'));
+if (warned.length) {
+  console.log('\n⚠ 의도적으로 열어둔 항목 중 위험 표시:');
+  for (const [k, v] of warned) console.log(`   ${k}\n     ${v}`);
 }
 process.exit(fails.length ? 1 : 0);

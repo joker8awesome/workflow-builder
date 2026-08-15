@@ -1056,11 +1056,75 @@ async function checkServer() {
   return serverOnline;
 }
 
+// === API 키 (팀 도구) ===
+// 서버가 변경 API에 인증을 요구하기 시작하면 이 키가 없으면 401이 된다.
+// 키는 이 브라우저의 localStorage 에만 둔다 — 소스나 저장소에 넣지 않는다.
+const WF_KEY_LS = 'wf_api_key';
+let wfAuthFailed = false;
+function getWfKey() { try { return localStorage.getItem(WF_KEY_LS) || ''; } catch (e) { return ''; } }
+function setWfKey(k) {
+  try { k ? localStorage.setItem(WF_KEY_LS, k) : localStorage.removeItem(WF_KEY_LS); } catch (e) {}
+  wfAuthFailed = false;
+  updateSyncStatus();
+}
+function promptWfKey() {
+  const cur = getWfKey();
+  const v = prompt(
+    'API 키 (wf_ak_...)\n\n' +
+    '팀 도구 모드에서는 편집에 키가 필요합니다.\n' +
+    '팀 → 에이전트 → 자격증명 발급 에서 받을 수 있습니다.\n' +
+    '비워두고 확인하면 저장된 키를 지웁니다.',
+    cur);
+  if (v === null) return;            // 취소
+  setWfKey(v.trim());
+  if (getWfKey()) loadFromServer().catch(() => {});
+}
+
+// fetch 래퍼 — API 호출에만 Authorization 을 붙인다.
+// 호출 지점이 60곳이 넘어 하나씩 고치면 반드시 빠뜨린다. 한 곳에서 처리한다.
+(function installAuthFetch() {
+  const orig = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (url.indexOf('/api/') === -1 && url.indexOf('/mcp') === -1) return orig(input, init);
+    const key = getWfKey();
+    const opts = Object.assign({}, init);
+    const headers = new Headers((init && init.headers) || {});
+    // 이미 Authorization 이 지정된 호출(자격증명 발급 등)은 건드리지 않는다
+    if (key && !headers.has('Authorization')) headers.set('Authorization', 'Bearer ' + key);
+    opts.headers = headers;
+    return orig(input, opts).then(r => {
+      if (r.status === 401 || r.status === 403) {
+        if (!wfAuthFailed) {
+          wfAuthFailed = true;
+          updateSyncStatus();
+          console.warn('[auth] 인증 필요 —', r.status, url);
+        }
+      }
+      return r;
+    });
+  };
+})();
+
 function updateSyncStatus() {
   const el = document.getElementById('sync-status');
   if (!el) return;
-  el.textContent = serverOnline ? '서버 연결됨' : '로컬 저장';
-  el.style.color = serverOnline ? '#1a7f37' : '#888';
+  if (wfAuthFailed) {
+    el.textContent = '🔑 키 필요 (클릭)';
+    el.style.color = '#d29922';
+  } else if (serverOnline) {
+    el.textContent = getWfKey() ? '서버 연결됨 🔑' : '서버 연결됨';
+    el.style.color = '#1a7f37';
+  } else {
+    el.textContent = '로컬 저장';
+    el.style.color = '#888';
+  }
+  el.style.cursor = 'pointer';
+  el.title = '클릭하면 API 키를 입력/변경합니다';
+  if (!el.dataset.keyBound) {
+    el.dataset.keyBound = '1';
+    el.addEventListener('click', promptWfKey);
+  }
 }
 
 // 서버에서 전체 워크플로우 로드 (성공 시 store 대체)

@@ -232,3 +232,8 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서#19: 자동 픽업 배포 — npm test 157건, Hermes cron 등록(시스템 cron 데몬 없음), wrapper 경로 수정, hermes -z 실동작 확인(자동 #17 수행, claim 3건, 커밋 58aaa25) | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |
 | 2026-08-15 | 지시서#17: 자동 픽업 검증 — 사람 개입 없이 지시 수신·수행 (ops/.queue-trigger.json 읽고 git pull 후 지시서 수행) | ✅ 완료 |
+| 2026-08-16 | 센터장 봇 양방향 대화 구현 — 텔레그램 텍스트 수신(/status·/queue·/help 직접 응답, 자유 문장은 큐 적재), 봇 메시지 무시로 루프 차단, allowed_updates에 message 추가 (3c0acbf) | ✅ |
+| 2026-08-16 | 할매봇→센터장 자동 픽업 — report는 ops/inbox.md 기록 후 claim(세션 불필요), command/instruction만 세션 기동. 본문은 REST /api/messages로 보완(list_pending은 payload_ref만 반환) | ✅ |
+| 2026-08-16 | 버그 발견·수정: POST /api/messages 기본 status='sent' → list_pending('pending'만 조회)에 영영 안 잡힘. 기본값 'pending'으로 변경, ops/test-message-status.js(6건)로 고정 | ✅ |
+| 2026-08-16 | 실증: msg_175(ag_hermes→ag_claude_desktop, 'sent')가 위 버그로 미수신 상태 확인. 배포 후 신규 메시지부터 해소, msg_175는 잔존 | 확인 |
+| 2026-08-16 | 지시서#20 작성·전달(msg_176) — 배포 3c0acbf + 웹훅 재등록 필수(allowed_updates 변경) | 대기 |

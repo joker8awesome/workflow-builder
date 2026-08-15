@@ -1,0 +1,27 @@
+# ops/.trigger-env — cron 큐 트리거 설정
+#
+#   cp ops/.trigger-env.example ops/.trigger-env
+#   chmod 600 ops/.trigger-env        ← 키가 들어가므로 권한을 조일 것
+#
+# 이 파일은 .gitignore 대상이다. 커밋하지 말 것.
+
+# 대상 에이전트
+WF_AGENT_ID=ag_hermes
+
+# 해당 에이전트의 wf_ak_ 키 (mcp:read 이상이면 된다. admin 불필요)
+WF_MCP_KEY=
+
+# MCP 엔드포인트 (기본값 그대로면 생략 가능)
+# WF_MCP_URL=https://187.127.124.16.sslip.io/mcp
+
+# 새 지시를 발견했을 때 실행할 명령 — 에이전트를 기동한다.
+#
+# ⚠️ flock 을 여기 붙이지 말 것.
+#    잠금은 queue-trigger.js 안에서 처리한다. 여기서 잠그면 막힌 회차가
+#    "실행했다"로 기록되어 그 지시가 영원히 처리되지 않는다.
+#
+# hermes -z 는 oneshot(종료형)이라 cron 에 적합하다.
+WF_TRIGGER_CMD=/opt/hermes/.venv/bin/hermes -z "커멘드센터 큐에 새 지시가 있다. ops/.queue-trigger.json 을 읽어 어떤 지시인지 확인하고, git pull origin main 후 payload_ref 가 가리키는 지시서를 읽고 수행하라. 끝나면 agent.tasks.claim 으로 해당 message_id 를 claim 하고, send_to_center.py 로 센터장에게 보고하라. 프로덕션 쓰기와 배포는 승인 게이트를 거친다. 판단이 서지 않으면 실행하지 말고 보고만 하라."
+
+# node 가 표준 경로에 없으면 지정 (cron 은 PATH 가 최소다)
+# WF_NODE_DIR=/usr/local/bin

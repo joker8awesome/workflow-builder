@@ -14,3 +14,4 @@ ops/.queue-trigger*.json
 ops/.trigger-test-marker
 ops/queue-trigger.log
 ops/.queue-trigger.lock
+ops/.trigger-env

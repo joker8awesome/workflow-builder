@@ -37,7 +37,39 @@ const CMD = process.env.WF_TRIGGER_CMD || '';
 const STATE = path.join(ROOT, 'ops', '.queue-trigger-seen.json');
 const OUT = path.join(ROOT, 'ops', '.queue-trigger.json');
 
+const LOCK = path.join(ROOT, 'ops', '.queue-trigger.lock');
+const LOCK_STALE_MS = 15 * 60 * 1000;   // 기동 명령 타임아웃(10분)보다 넉넉히
+
 function log(...a) { console.log(`[${new Date().toISOString()}]`, ...a); }
+
+/**
+ * 잠금은 이 스크립트 안에서 잡는다 — WF_TRIGGER_CMD 에 flock 을 두면 안 된다.
+ *
+ * cron 은 1분마다 도는데 기동은 수 분 걸릴 수 있다. 명령 쪽에서 잠그면
+ * 이 스크립트는 "실행했다"고 믿고 seen 에 기록해 버린다. 그런데 실제로는
+ * 잠금에 막혀 아무것도 안 했으므로, 그 지시는 영원히 처리되지 않는다.
+ * 여기서 잠그면 "시도조차 못 했다"를 알 수 있어 seen 을 남기지 않고 다음 분에 재시도한다.
+ */
+function acquireLock() {
+  try {
+    fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' });
+    return true;
+  } catch (e) {
+    if (e.code !== 'EEXIST') { console.warn('[trigger] 잠금 오류:', e.message); return false; }
+    // 죽은 프로세스가 남긴 잠금이면 회수한다 — 안 그러면 영영 막힌다
+    try {
+      const age = Date.now() - fs.statSync(LOCK).mtimeMs;
+      if (age > LOCK_STALE_MS) {
+        log(`오래된 잠금 회수 (${Math.round(age / 1000)}초 경과)`);
+        fs.unlinkSync(LOCK);
+        fs.writeFileSync(LOCK, String(process.pid), { flag: 'wx' });
+        return true;
+      }
+    } catch (e2) { /* 경합 — 아래에서 false */ }
+    return false;
+  }
+}
+function releaseLock() { try { fs.unlinkSync(LOCK); } catch (e) {} }
 
 function loadSeen() {
   // 처리한 id 를 파일에 남긴다. 메모리에만 두면 cron 은 매번 새 프로세스라
@@ -70,6 +102,15 @@ async function listPending() {
 
 (async () => {
   if (!KEY) { console.error('WF_MCP_KEY 필요'); process.exit(2); }
+
+  // 잠금을 먼저 잡는다. 못 잡으면 seen 을 건드리지 않고 그대로 나간다 —
+  // 다음 분에 같은 지시를 다시 보게 된다.
+  if (!acquireLock()) {
+    process.exit(1);   // 이전 기동이 아직 진행 중
+  }
+  process.on('exit', releaseLock);
+  process.on('SIGINT', () => { releaseLock(); process.exit(130); });
+  process.on('SIGTERM', () => { releaseLock(); process.exit(143); });
 
   let tasks;
   try { tasks = await listPending(); }

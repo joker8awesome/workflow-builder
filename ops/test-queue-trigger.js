@@ -104,6 +104,36 @@ srv.listen(0, '127.0.0.1', async () => {
   r = await run({ WF_MCP_KEY: '' });
   check('종료코드 2', r.status === 2, String(r.status));
 
+  console.log('\n7) 잠금 — 겹쳐 돌지 않고, 막혔을 때 지시를 잃지 않는다');
+  // cron 은 1분마다 도는데 기동은 수 분 걸릴 수 있다.
+  // 잠금을 WF_TRIGGER_CMD 쪽(flock)에 두면 이 스크립트는 '실행했다'고 믿고
+  // seen 에 기록하지만 실제로는 아무것도 안 했으므로 그 지시는 영원히 사라진다.
+  cleanup();
+  const LOCK = path.join(ROOT, 'ops', '.queue-trigger.lock');
+  try { fs.unlinkSync(LOCK); } catch (e) {}
+  TASKS = [{ message_id: 'msg_lock', from_agent: 'x', trace_id: 'tl', payload_ref: '' }];
+  fs.writeFileSync(LOCK, '99999');                 // 다른 실행이 진행 중인 상황
+  r = await run({ WF_TRIGGER_CMD: 'node -e "0"' });
+  check('잠겨 있으면 기동하지 않음', r.status === 1, String(r.status));
+  check('막혔을 때 seen 에 기록하지 않는다', !fs.existsSync(STATE),
+    '여기서 기록하면 그 지시는 다시는 처리되지 않는다');
+
+  try { fs.unlinkSync(LOCK); } catch (e) {}
+  r = await run({ WF_TRIGGER_CMD: `node -e "require('fs').writeFileSync('${MARK.replace(/\\/g, '\\\\')}','1')"` });
+  check('잠금이 풀리면 다음 회차에 처리된다', r.status === 0 && fs.existsSync(MARK), String(r.status));
+  check('정상 종료 시 잠금이 해제된다', !fs.existsSync(LOCK));
+
+  // 오래된 잠금은 회수해야 한다 — 죽은 프로세스가 남기면 영영 막힌다
+  try { fs.unlinkSync(MARK); } catch (e) {}
+  fs.writeFileSync(LOCK, '99999');
+  const old = Date.now() - 20 * 60 * 1000;
+  fs.utimesSync(LOCK, new Date(old), new Date(old));
+  TASKS.push({ message_id: 'msg_stale', from_agent: 'x', trace_id: 'ts', payload_ref: '' });
+  r = await run({ WF_TRIGGER_CMD: `node -e "require('fs').writeFileSync('${MARK.replace(/\\/g, '\\\\')}','1')"` });
+  check('오래된 잠금은 회수한다', r.status === 0 && fs.existsSync(MARK),
+    '죽은 프로세스의 잠금이 남으면 자동 픽업이 영구히 멈춘다');
+  try { fs.unlinkSync(LOCK); } catch (e) {}
+
   cleanup();
   srv.close();
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));

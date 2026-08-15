@@ -174,27 +174,16 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | `active_sessions` 실행 후 0 — 정상 (`done`은 활성 어휘가 아니므로 sweep 대상 아님) | ✅ 설계대로 |
 | 2026-08-15 | `agent.list` 배포 후 검증 (capability 필터) | ⏸ 배포 대기 |
 
+| 2026-08-15 | 프론트엔드 검토 — Pages가 백엔드에 못 닿음(API_BASE=''), SW가 미사용 폰트 1.9MB 캐시 | ✅ 완료 |
+| 2026-08-15 | 자동 협업 프로토콜 설계 — 큐/승인은 이미 있고 **알림 경로가 공백**임을 규명 | ✅ 완료 |
+| 2026-08-15 | 프로토콜 1~4단계 구현 (`notify.js`·`approval-gate.js`·scheduler 큐 감시) | ✅ 완료 |
+| 2026-08-15 | 텔레그램 승인 버튼 웹훅 — secret + chat_id 2중 검증, 중복 클릭 차단 | ✅ 완료 |
+| 2026-08-15 | 5단계 폴링 — Windows 작업 `CommandCenter-QueuePoll` 15분 간격 등록 | ✅ 완료 |
+| 2026-08-15 | 지시서 #4 배포 (할매봇) — rollback 게이트 + 웹훅 | ✅ 완료 |
+| 2026-08-15 | **배포 독립 검증** — required에 rollback, 웹훅 403(2종), pending 0, owner 정상, machine 보존 | ✅ **전 항목 일치** |
+| 2026-08-15 | 버튼 경로 실증 — 승인 id 6 approver=`@hanwoo79` (웹훅만이 만드는 형식) | ✅ 확인 |
+
 > 이후 작업은 이 표에 계속 추가할 것.
-
-### ⚠️ 배포 대기 — 할매봇 작업 필요
-
-**커밋 `5f81cf5` (P0 보안)는 푸시됐으나 VPS 미배포다.** 배포 전까지 자격증명 API는 계속 열려 있다.
-
-```bash
-cd /opt/data/projects/workflow-builder
-git pull origin main
-node ops/test-auth-credential.js        # 18/18 기대
-npx pm2 restart workflow-builder        # ← 이번엔 필수 (server.js·라우터 변경)
-```
-
-배포 직후 확인:
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://187.127.124.16.sslip.io/api/agents/ag_orch/credentials
-# 401 이어야 한다 (이전 200)
-```
-
-> **주의:** 배포 순간부터 웹 UI의 키 발급 버튼은 **관리자 키 입력이 필요**하다.
-> `ag_claude_desktop` 키가 `mcp:admin`을 보유하므로 그것을 쓰면 된다.
 
 ### 해결됨
 

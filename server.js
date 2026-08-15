@@ -301,6 +301,7 @@ const TEAM_ROUTES = {
   ag_integrator:  { receive: ['ag_orch','ag_developer'],  default_to: 'ag_tester' },
   ag_archiver:    { receive: ['*'],                       default_to: 'ag_orch' },
   ag_auditor:     { receive: ['ag_orch'],                 default_to: 'ag_orch' },
+  ag_deepseek:    { receive: ['ag_orch','ag_analyst'],     default_to: 'ag_reviewer' },
 };
 // 다음 담당자 추천 — 핸드오프 프로토콜
 app.get('/api/team/next/:agentId', (req, res) => {

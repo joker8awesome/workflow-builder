@@ -1,10 +1,7 @@
 // Service Worker — PWA 오프라인 캐시 (v3: 더보기 메뉴 캐시 문제 해결 — 네트워크 우선 강화)
-const CACHE = 'wf-builder-v4'; // v4: sync-status 이동 반영 — 구버전 캐시 강제 무효화
+const CACHE = 'wf-builder-v5'; // v5: 캐시 완전 무효화 — 이전 SW가 남긴 캐시 전부 삭제 // v4: sync-status 이동 반영 — 구버전 캐시 강제 무효화
 const ASSETS = [
   './index.html',
-  './fonts/Isamanru-Light.woff',
-  './fonts/Isamanru-Medium.woff',
-  './fonts/Isamanru-Bold.woff'
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

@@ -31,6 +31,10 @@ CHECK_INTERVAL = 30  # 초
 # 갈라지면 반드시 어긋난다 (notify.js 주석 참조).
 API_BASE = os.environ.get("WF_API_BASE", "http://127.0.0.1:%s" % os.environ.get("PORT", "3737"))
 
+# /api/approvals 잠금(WF_APPROVALS_AUTH=1) 이후 필요한 키.
+# ag_scheduler 자격증명(mcp:execute)을 쓴다. admin 은 필요 없다.
+SCHEDULER_KEY = os.environ.get("WF_SCHEDULER_KEY", "")
+
 def db():
     return psycopg2.connect(DB_DSN)
 
@@ -67,15 +71,22 @@ def run_workflow(wf_id):
         print(f"[{datetime.now():%H:%M:%S}] 오류 {wf_id}: {e}")
 
 def request_approval(wf_id, agent_id, action, context):
-    """승인 요청 생성 — server.js 가 텔레그램 전송까지 처리한다."""
+    """승인 요청 생성 — server.js 가 텔레그램 전송까지 처리한다.
+
+    WF_SCHEDULER_KEY 를 항상 함께 보낸다.
+    /api/approvals 가 아직 열려 있어도 헤더는 무해하고, 잠근 뒤에는 이게 없으면
+    401 로 막혀 '알림이 안 온다'는 조용한 고장이 된다. 키가 없으면 크게 경고한다.
+    """
     import urllib.request
     payload = json.dumps({
         "wf_id": wf_id or "-", "agent_id": agent_id or "-",
         "action": action, "context": context or "", "decision": "pending",
     }).encode()
+    headers = {"Content-Type": "application/json"}
+    if SCHEDULER_KEY:
+        headers["Authorization"] = "Bearer " + SCHEDULER_KEY
     req = urllib.request.Request(
-        API_BASE + "/api/approvals", data=payload,
-        headers={"Content-Type": "application/json"}, method="POST")
+        API_BASE + "/api/approvals", data=payload, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             out = json.loads(r.read().decode())
@@ -85,7 +96,12 @@ def request_approval(wf_id, agent_id, action, context):
                 print(f"[승인] id={out.get('id')} 요청 전송")
             return out.get("id")
     except Exception as e:
-        print(f"[승인] 요청 실패: {e}")
+        code = getattr(e, 'code', None)
+        if code == 401:
+            print("[승인] 401 — WF_SCHEDULER_KEY 가 없거나 유효하지 않다. "
+                  "승인 알림이 사용자에게 전달되지 않는다. 즉시 확인할 것")
+        else:
+            print(f"[승인] 요청 실패: {e}")
         return None
 
 def poll_agent_messages(seen, since):
@@ -133,6 +149,7 @@ def main():
     print("워크플로우 스케줄러 시작 (30초 간격)")
     print(f"  DB   : {DB_DSN.split('dbname=')[-1].split()[0] if 'dbname=' in DB_DSN else '(DATABASE_URL)'}")
     print(f"  API  : {API_BASE}")
+    print(f"  승인 키: {'설정됨' if SCHEDULER_KEY else '없음 — /api/approvals 가 잠기면 알림이 끊긴다'}")
     last_minute = None
     seen_msgs = set()
     # 기동 시각 이후에 생긴 메시지만 알린다.

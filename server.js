@@ -75,6 +75,22 @@ function maybeAuth(scope) {
     return mw(req, res, next);
   };
 }
+
+// /api/approvals 전용 플래그.
+// 이 경로는 scheduler.py 가 인증 없이 호출하고 있어서 REQUIRE_AUTH_ALL 에서 제외해 뒀다.
+// 그런데 열려 있는 동안은 누구나 승인 요청을 만들 수 있고, 그때마다 사용자 휴대폰으로
+// 텔레그램 알림이 간다 — 실질적인 괴롭힘 벡터다.
+//
+// 켜기 전에 scheduler.py 가 키를 보내는지 반드시 확인할 것.
+// 못 보내면 승인 요청이 401 로 실패하고 "알림이 안 온다"는 조용한 고장이 된다.
+const APPROVALS_AUTH = process.env.WF_APPROVALS_AUTH === '1';
+function approvalsAuth() {
+  const mw = requireScope(pool, 'mcp:execute', { allowAccessToken: true });
+  return function (req, res, next) {
+    if (!APPROVALS_AUTH) return next();
+    return mw(req, res, next);
+  };
+}
 const approvalGate = require('./approval-gate');
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool(process.env.DATABASE_URL
@@ -713,7 +729,7 @@ app.delete('/api/agents/:id', requireAuth, async (req, res) => {
 });
 
 // === 승인 감사 API (Strong HITL) ===
-app.post('/api/approvals', async (req, res) => {
+app.post('/api/approvals', approvalsAuth(), async (req, res) => {
   try {
     const { wf_id, node_id, agent_id, approver, decision, checklist, context, action } = req.body || {};
     if (!wf_id) return res.status(400).json({ success: false, error: 'wf_id required' });
@@ -1643,6 +1659,7 @@ ${WF_SCHEMA_EXAMPLE}`;
 
 server.listen(PORT, () => {
   approvalGate.logConfig();
+  console.log(`[approval] /api/approvals 인증: ${APPROVALS_AUTH ? '요구함' : '열려 있음 (WF_APPROVALS_AUTH=1 로 잠금)'}`);
   if (!notify.enabled()) console.warn('[notify] 텔레그램 미설정 — 승인 요청이 사용자에게 전달되지 않는다');
   console.log(`워크플로우 빌더 서버: http://localhost:${PORT}`);
 });

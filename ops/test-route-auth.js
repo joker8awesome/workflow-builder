@@ -22,8 +22,6 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 const ALLOWED_PUBLIC = {
   '/api/telegram/webhook': '텔레그램이 호출한다. 자체 secret_token + chat_id 검증이 있다',
   '/api/webhook/:token': 'URL 의 token 자체가 자격이다',
-  '/api/approvals': '⚠ 승인 요청 생성. scheduler.py 가 인증 없이 POST 한다. '
-    + '악용 시 사용자 텔레그램에 알림을 다량 보낼 수 있다 — 스케줄러에 키를 주고 닫을 것',
 
   // 아래 라우트들은 maybeAuth 로 감싸져 WF_REQUIRE_AUTH_ALL=1 이면 인증이 걸린다.
   // 플래그가 꺼져 있을 때만 무인증이므로 이 목록에는 넣지 않는다.
@@ -42,7 +40,7 @@ for (const m of SRC.matchAll(/app\.(post|put|delete|patch)\(\s*'([^']+)'\s*,([^\
   routes.push({
     method: m[1].toUpperCase(), path: m[2],
     guarded: /requireAuth|requireScope/.test(rest),
-    conditional: /maybeAuth/.test(rest),   // WF_REQUIRE_AUTH_ALL=1 일 때만 적용
+    conditional: /maybeAuth|approvalsAuth/.test(rest),   // 환경변수 플래그로만 적용
   });
 }
 // 별도 줄로 거는 형태: app.post('/x', requireAuth);
@@ -74,12 +72,16 @@ for (const p of COSTLY) {
     r ? '외부 LLM 을 호출한다. 무인증이면 공개 LLM 프록시가 된다' : '');
 }
 
-console.log('\n4) 플래그로 보호되는 라우트 (팀 도구 3단계)');
+console.log('\n4) 플래그로만 보호되는 라우트');
 check('조건부 보호 라우트가 존재', conditional.length > 0,
-  'maybeAuth 로 감싼 라우트가 없다. 3단계가 되돌려졌는지 확인할 것');
-console.log(`         ${conditional.length}개가 maybeAuth 로 감싸져 있다.`);
-console.log('         WF_REQUIRE_AUTH_ALL=1 이어야 실제로 인증이 걸린다.');
-console.log('         플래그가 꺼져 있는 동안은 여전히 무인증이다 — 배포만으로 닫히지 않는다.');
+  '조건부 인증 래퍼가 없다. 되돌려졌는지 확인할 것');
+const byApprovals = [...SRC.matchAll(/app\.post\('([^']+)',\s*approvalsAuth\(\)/g)].map(m => m[1]);
+console.log(`         총 ${conditional.length}개.`);
+console.log(`         · WF_REQUIRE_AUTH_ALL=1 : ${conditional.length - byApprovals.length}개`);
+console.log(`         · WF_APPROVALS_AUTH=1   : ${byApprovals.length}개  ${byApprovals.join(', ')}`);
+console.log('         플래그가 꺼져 있는 동안은 여전히 무인증이다 — 배포만으로는 닫히지 않는다.');
+check('/api/approvals 가 조건부 보호에 포함', byApprovals.includes('/api/approvals'),
+  '승인 요청은 사용자 휴대폰으로 알림을 보낸다. 무방비면 알림 폭탄이 가능하다');
 
 console.log('\n' + (fails.length ? `실패 ${fails.length}건` : '전부 통과'));
 const warned = Object.entries(ALLOWED_PUBLIC).filter(([, v]) => v.startsWith('⚠'));

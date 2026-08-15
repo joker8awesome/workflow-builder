@@ -4081,14 +4081,13 @@ let selectedAgent = null;
 
 // 에이전트 로드 (서버 우선, 실패 시 로컬)
 async function loadAgents() {
-  if (serverOnline) {
-    try {
-      const r = await fetch(API_BASE + '/api/agents');
-      const j = await r.json();
-      if (j.success) { agents = j.agents || []; saveAgentsLocal(); return; }
-    } catch (e) {}
-  }
+  try {
+    const r = await fetch(API_BASE + '/api/agents');
+    const j = await r.json();
+    if (j.success) { agents = j.agents || []; saveAgentsLocal(); renderAgents(); return; }
+  } catch (e) {}
   try { agents = JSON.parse(localStorage.getItem(LS_KEY + '_agents') || '[]'); } catch (e) { agents = []; }
+  renderAgents();
 }
 function saveAgentsLocal() {
   try { localStorage.setItem(LS_KEY + '_agents', JSON.stringify(agents)); } catch (e) {}
@@ -5386,7 +5385,7 @@ document.getElementById('btn-team').addEventListener('click', () => { toggleTeam
 document.getElementById('team-close').addEventListener('click', () => { document.getElementById('team-panel').style.display = 'none'; });
 document.getElementById('team-refresh').addEventListener('click', loadTeamStatus);
 document.getElementById('team-bootstrap').addEventListener('click', bootstrapTeam);
-document.getElementById('btn-agents').addEventListener('click', toggleAgentsPanel);
+document.getElementById('btn-agents').addEventListener('click', () => { toggleAgentsPanel(); loadAgents(); });
 document.getElementById('agents-close').addEventListener('click', () => {
   document.getElementById('agents-panel').style.display = 'none';
 });

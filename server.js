@@ -58,6 +58,7 @@ app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallba
 
 const notify = require('./notify');
 const { parseJsonbStrict } = require('./jsonb');
+const { requireScope } = require('./auth-credential');
 const approvalGate = require('./approval-gate');
 // PostgreSQL — 로컬 소켓 trust
 const pool = new Pool(process.env.DATABASE_URL
@@ -1457,14 +1458,22 @@ app.post('/api/feedback', async (req, res) => {
 
 // === 딥시크 LLM 워커 — ag_deepseek 에이전트 실행 ===
 // 규칙: 명령 수신 → deepseek-v4-flash 호출 → 결과 report (trace_id 유지)
-app.post('/api/llm/worker', async (req, res) => {
+// 인증 필수 — 이 라우트는 외부 LLM 을 호출해 실제 비용을 발생시킨다.
+// 무인증이면 URL 을 아는 누구나 사용자의 크레딧으로 LLM 을 쓸 수 있고,
+// system 프롬프트까지 지정할 수 있어 사실상 공개 LLM 프록시가 된다.
+app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken: true }), async (req, res) => {
   try {
+    // 인증된 호출자라도 폭주는 막는다 — 비용이 나가는 경로다
+    if (!rateLimit('llm:' + (req.agent_id || req.ip || 'anon'), 20)) {
+      return res.status(429).json({ success: false, error: 'rate limited', detail: '분당 20회' });
+    }
     const { prompt, agent_id, trace_id, system } = req.body || {};
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
     const nous = getNousAuth();
     if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
     const r = await fetch(nous.base + '/chat/completions', {
       method: 'POST',
+      signal: AbortSignal.timeout(60000),   // 응답 없는 호출이 요청을 물고 있지 않도록
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
       body: JSON.stringify({
         model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',

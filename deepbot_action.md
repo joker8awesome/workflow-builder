@@ -303,3 +303,10 @@ agent.payload.get / report / checkpoint
 | 2026-08-17 | 🛑 #33 중단 지시 (사용자) — API 비용 급증 확인 중. 워커 호출 중단·기존 결과는 보존·커밋 금지 | 중단 |
 | 2026-08-17 | 비용 원인 조사 — 센터장 세션은 claude_max/20x 구독이나 hasExtraUsageEnabled=true(한도 초과분 추가 과금). 오늘 할매봇 세션 10회·Kimi 워커 58회(Nous 청구, Anthropic 아님). 할매봇 VPS 인증 방식 확인 요청 | 진행 |
 | 2026-08-17 | 지시서#34 작성 — 트리거 재등록 전 경로 검증. --script 해석 기준이 workdir인지 hermes 스크립트 디렉터리인지 불확실(오전 자기-exec 스텁 사고와 같은 지점). 손으로 1회 실행 통과 전 cron 등록 금지, 주기는 1분이 아니라 */5 | 대기 |
+| 2026-08-17 | 센터장 세션 교대 — 이전 세션이 msg_316·317·319·320 을 못 보고 종료. 로그 공백을 새 세션이 메움 | ✅ |
+| 2026-08-17 | 🔴 비용 원인 특정 — 할매봇(msg_319)의 모든 세션(`hermes -z` + `/api/llm/worker`)은 **Nous Portal OAuth** 로 과금(`/opt/data/auth.json`, active_provider=nous). VPS 에 ANTHROPIC_API_KEY 없음·`~/.claude.json` 에 oauthAccount 없음. 즉 **어제부터 늘어난 Anthropic 과금은 할매봇 경로가 아니다.** 남는 후보는 센터장(Windows) 쪽 — `poll-queue.js --run` 이 대기 건마다 claude 세션을 띄우고, 폴링 주기를 15분→5분으로 줄인 것(ea8a251)이 어제다 | 확정 |
+| 2026-08-17 | 지시서#33 **중복 수행 확인** — 같은 지시로 할매봇 세션이 2개 떴다. 세션1: 커밋 577b8a9(16:00:36), 채택3/반려11. 세션2: 커밋 7c9fc33(review-2 브랜치), 채택6/반려7. 워커 호출 13+18=31회(Kimi/Nous). msg_297 claim 이 선점을 막지 못했다(세션2가 13개 함수를 다 돌린 **뒤에야** claimed_by:ag_other 확인). 둘 다 push 안 함, origin/main==f3338a6 | 발견 |
+| 2026-08-17 | 🔴 #33 판단 충돌 — 겹치는 채택은 patchWSHandler·ATF 2건뿐. 세션2만 채택: loadFromServer(부분 로드로 로컬 전체 덮어씀)·loadTplFromServer(r.ok 미검사로 빈 템플릿에 성공 토스트)·refreshMCPStatus(4xx/5xx를 오프라인으로 오표시). 세션1만 채택: reviewer 반려 무시(start→reviewer 시 prevEdge 없어 반려가 무시됨). **어느 쪽 diff 도 로컬에 없다(둘 다 VPS 로컬 커밋)** — 요약만으로는 판정 불가. 3차 워커 호출로 푸는 것은 금지(비용 동결 중) | 승인대기 |
+| 2026-08-17 | 지시서#34 완료 확인(msg_320) — `--script` 는 `~/.hermes/scripts/` 기준으로 확인됨(추측 금지 지시가 실제로 사고를 막았다). 스텁은 심볼릭 링크 아닌 실파일 복사본으로 배치, cron_job_id 50533d8bb111, 주기 */5, 16:45·16:50 실행 확인. 큐가 비면 exit 1 로 hermes -z 를 아예 안 띄운다 | ✅ |
+| 2026-08-17 | 센터장 폴링 정지 확인 — Windows 작업 `CommandCenter-QueuePoll` 이 **Disabled**(마지막 실행 01:38). 즉 지금 자동화는 VPS 쪽만 살아 있고 센터장 쪽은 꺼져 있다. 재활성화는 사용자 승인 사항(비용 조사 중)이라 손대지 않음. 참고: poll-queue.cmd 가 `exit /b 0` 로 끝나 작업 스케줄러의 Last Result 는 항상 0 — 성패 신호가 아니다 | 확인 |
+| 2026-08-17 | 로컬 claude 프로세스 27개(가장 오래된 것 08-12 21:03, 각 CPU 약 400초 누적). 유휴는 토큰을 쓰지 않지만 5일째 안 닫히는 것은 정상이 아니다 — 정리는 사용자 승인 후 | 확인 |

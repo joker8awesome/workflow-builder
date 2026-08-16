@@ -245,3 +245,9 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 할매봇 #21 중간보고 반영 — 스텁 자기-exec은 pull로 이미 해소(무한루프 프로세스 없음), Hermes cron 실경로는 /opt/data/scripts/queue-trigger.sh(저장소 밖 래퍼)로 확인 | 확인 |
 | 2026-08-16 | 기동 실패 시 지시 유실 수정 — seen을 기동 전 저장하던 것을 시도 횟수(tries)로 대체. 성공해야 seen, 실패는 MAX_TRIES(3)까지 재시도 후 포기+경고. msg_176이 이 경로로 묻혔던 건 (fb1ab65) | ✅ |
 | 2026-08-16 | 지시서#22 수행 (자동 픽업) — 배포 확정(HEAD 7671a9c, fb1ab65 포함), 재시도 테스트 전부 PASS(5)항 7건, 무효 crontab 항목 제거, msg_178 claim. 잠금 경합 이슈 확인(테스트는 프로덕션 잠금 해제 후 실행해야 통과) | ✅ 완료 |
+| 2026-08-16 | 무인 픽업 양방향 확인 — 센터장→할매봇: msg_178 자동 기동(22:57 적재→23:15 픽업, 사람 개입 없음). 할매봇→센터장: msg_177·179 자동 수령·claim·inbox 기록 | ✅ |
+| 2026-08-16 | 텔레그램 진단 분리 — acceptCount 하나로 합쳐져 버튼/텍스트 구분 불가였음. callbackCount·messageCount 분리, allowed_updates 누락 힌트 추가 (7671a9c) | ✅ |
+| 2026-08-16 | 할매봇 발견 반영: 테스트가 프로덕션 트리거 상태 파괴 — npm test의 cleanup()이 ops/.queue-trigger-seen.json 삭제, pending 지시 중복 기동 위험. WF_TRIGGER_DIR로 격리, mkdtemp 사용, 검사 2건 (11스위트 173건) | ✅ |
+| 2026-08-16 | 키 파일 gitignore — wf_user_key.txt 무방비 노출(커밋 이력 없음 확인), *_key.txt·*.key 패턴 추가 (817d5e9) | ✅ |
+| 2026-08-16 | 지시서#23 작성·전달 — 테스트 격리 배포 + VPS 키 파일 점검 | 대기 |
+| 2026-08-16 | 환경 메모: Git Bash에서 curl -d 로 한글 전송 시 깨짐 → 파일+--data-binary 사용 (텔레그램 알림 깨짐으로 발견) | 확인 |

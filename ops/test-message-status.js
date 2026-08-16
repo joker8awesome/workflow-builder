@@ -55,6 +55,19 @@ check('LLM 워커 보고 수신자가 고정돼 있지 않다',
   /report_to \|\| req\.agent_id/.test(SRV),
   "'ag_orch' 로 박혀 있으면 지시한 쪽과 받는 쪽이 달라진다");
 
+console.log('\n2-1) LLM 워커가 실패를 성공으로 포장하지 않는가');
+// 제공자가 404 를 줘도 그 오류 JSON 이 "결과"가 되고 success:true 로 나갔다.
+// 모델명이 잘못 바뀐 뒤 모든 호출이 실패했는데 아무도 몰랐다 (2026-08-16).
+check('실패 시 502 로 응답',
+  /res\.status\(502\)\.json\(\{ success: false, error: 'llm_failed'/.test(SRV),
+  '오류를 success:true 로 돌려주면 워커 결과를 믿는 쪽이 거짓을 받는다');
+check('실패 보고는 ok:false 로 기록',
+  /JSON\.stringify\(\{ ok: false, error: detail \}\)/.test(SRV),
+  'ok:true 로 남으면 나중에 로그를 봐도 실패를 못 찾는다');
+check('오류 본문을 결과로 승격하지 않는다',
+  !/message\.content\) \|\| JSON\.stringify\(j\)/.test(SRV),
+  '|| JSON.stringify(j) 가 있으면 제공자 오류가 그대로 결과가 된다');
+
 console.log('\n3) 오케스트레이터 어휘는 분리돼 있음을 확인 (의도된 것)');
 const ORCH = fs.existsSync(path.join(ROOT, 'agent_orchestrator.py'))
   ? fs.readFileSync(path.join(ROOT, 'agent_orchestrator.py'), 'utf8') : '';

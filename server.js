@@ -541,7 +541,7 @@ Context: ${JSON.stringify(context || {})}`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + auth.token },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-latest',
+        model: 'deepseek/deepseek-v4-flash-0731',
         messages: [{ role: 'system', content: sys }],
         temperature: 0.1, max_tokens: 100,
       }),
@@ -1319,7 +1319,7 @@ app.post('/api/ai/decide', maybeAuth('mcp:execute'), async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.access_token },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-latest',
+        model: 'deepseek/deepseek-v4-flash-0731',
         messages: [
           { role: 'system', content: 'Answer ONLY with YES or NO followed by a confidence score 0-100. Format: YES 85' },
           { role: 'user', content: String(prompt) },
@@ -1652,8 +1652,8 @@ app.post('/api/connector', maybeAuth('mcp:execute'), async (req, res) => {
 // === 다중 모델 라우팅 — 모델별 가격/품질 테이블 ===
 const MODEL_ROUTES = {
   'auto':    { desc: '자동', providers: ['nous'] },
-  'cheap':   { desc: '저비용', model: 'deepseek/deepseek-v4-flash-latest', max_tokens: 50 },
-  'smart':   { desc: '고성능', model: 'deepseek/deepseek-v4-flash-latest', max_tokens: 200 },
+  'cheap':   { desc: '저비용', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 50 },
+  'smart':   { desc: '고성능', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 200 },
 };
 app.get('/api/model-routes', (req, res) => res.json({ success: true, routes: MODEL_ROUTES }));
 
@@ -1690,7 +1690,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
       signal: AbortSignal.timeout(60000),   // 응답 없는 호출이 요청을 물고 있지 않도록
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
       body: JSON.stringify({
-        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-latest',
+        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',
         messages: [
           { role: 'system', content: system || '당신은 커멘드센터의 딥시크 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
           { role: 'user', content: prompt }
@@ -1699,7 +1699,27 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
       })
     });
     const j = await r.json();
-    const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || JSON.stringify(j);
+    const text = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+
+    // 실패를 성공으로 포장하지 않는다.
+    // 예전엔 `|| JSON.stringify(j)` 로 넘어가서, 제공자가 404 를 줘도 그 오류 JSON 이
+    // 그대로 "결과"가 되고 success:true 로 응답했다. 그래서 모델명이 잘못 바뀐 뒤로
+    // 모든 호출이 실패하는데도 아무도 몰랐다 (2026-08-16, 6곳 오타로 하루 종일 404).
+    // 워커 결과를 믿고 쓰는 쪽에서는 이게 가장 위험한 실패 방식이다.
+    if (!r.ok || !text) {
+      const detail = (j.error && (j.error.message || j.error)) || j.message || JSON.stringify(j).slice(0, 300);
+      console.error(`[llm] 워커 호출 실패 (HTTP ${r.status}): ${detail}`);
+      if (agent_id) {
+        const to = report_to || req.agent_id || 'ag_orch';
+        await pool.query(
+          `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
+           VALUES ('report', $1, $2, $3, 'pending', $4)`,
+          [agent_id, to, JSON.stringify({ ok: false, error: detail }), trace_id || '']
+        );
+      }
+      return res.status(502).json({ success: false, error: 'llm_failed', detail, trace_id: trace_id || '' });
+    }
+
     // 보고 기록.
     // 예전엔 받는 쪽이 'ag_orch' 로 박혀 있고 status 가 'sent' 였다. 둘 다 문제였다 —
     // 지시한 쪽과 받는 쪽이 다르고, list_pending 은 'pending' 만 조회하므로
@@ -1759,7 +1779,7 @@ ${WF_SCHEMA_EXAMPLE}`;
         'Authorization': 'Bearer ' + auth.token,
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-latest',
+        model: 'deepseek/deepseek-v4-flash-0731',
         messages: [
           { role: 'system', content: sysPrompt },
           { role: 'user', content: prompt },

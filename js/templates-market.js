@@ -43,15 +43,18 @@ async function publishTemplate() {
     '<button id="tpl-save" class="tb-action" style="width:100%">게시</button></div>', 60000);
   document.querySelector('#tpl-save').addEventListener('click', async () => {
     const id = 'tpl_' + Date.now().toString(36);
-    await fetch(API_BASE + '/api/templates', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id, name: document.querySelector('#tpl-name').value.trim() || wf.name,
-        description: document.querySelector('#tpl-desc').value.trim(),
-        category: document.querySelector('#tpl-cat').value.trim(),
-        tags: [], data: { name: wf.name, nodes: wf.nodes, edges: wf.edges },
-      }),
-    }).catch(() => {});
+    try {
+      const r = await fetch(API_BASE + '/api/templates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id, name: document.querySelector('#tpl-name').value.trim() || wf.name,
+          description: document.querySelector('#tpl-desc').value.trim(),
+          category: document.querySelector('#tpl-cat').value.trim(),
+          tags: [], data: { name: wf.name, nodes: wf.nodes, edges: wf.edges },
+        }),
+      });
+      if (!r.ok) { toast('템플릿 게시 실패 (' + r.status + ')'); return; }
+    } catch (e) { toast('템플릿 게시 실패 — 네트워크'); return; }
     document.querySelectorAll('.toast').forEach(t => t.remove());
     toast('템플릿 게시됨');
     renderMarket();

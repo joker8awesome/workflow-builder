@@ -1,11 +1,12 @@
 // 1. 승인 감사 기록
 async function logApproval(wfId, nodeId, agentId, decision, checklist) {
-  if (!serverOnline) return;
+  if (!serverOnline) { toast('서버 미연결 — 승인 기록 안 남음'); return; }
   try {
-    await fetch(API_BASE + '/api/approvals', {
+    const r = await fetch(API_BASE + '/api/approvals', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wf_id: wfId, node_id: nodeId, agent_id: agentId || '', approver: 'me', decision, checklist }),
     });
+    if (!r.ok) { toast('승인 기록 실패 (' + r.status + ')'); return; }
     // 1: 승인 이력 기반 자율성 — 연속 승인 카운트
     try {
       const cnt = JSON.parse(localStorage.getItem(LS_KEY + '_approve_streak') || '{}');
@@ -13,7 +14,7 @@ async function logApproval(wfId, nodeId, agentId, decision, checklist) {
       cnt[key] = decision === 'approved' ? (cnt[key] || 0) + 1 : 0;
       localStorage.setItem(LS_KEY + '_approve_streak', JSON.stringify(cnt));
     } catch (e) {}
-  } catch (e) {}
+  } catch (e) { toast('승인 기록 실패'); }
 }
 // 연속 승인 확인 — 40회 이상이면 자동 승인 (점진적 위임)
 async function shouldAutoApprove(agentId) {
@@ -114,10 +115,11 @@ function renderAgentMetrics() {
 async function addKnowledge(agentId, note, tags) {
   if (!serverOnline) { toast('서버 미연결'); return; }
   try {
-    await fetch(API_BASE + '/api/knowledge', {
+    const r = await fetch(API_BASE + '/api/knowledge', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_id: agentId, wf_id: currentWorkflow()?.id, note, tags }),
     });
+    if (!r.ok) { toast('지식 저장 실패 (' + r.status + ')'); return; }
     toast('지식 저장됨');
   } catch (e) { toast('지식 저장 실패'); }
 }

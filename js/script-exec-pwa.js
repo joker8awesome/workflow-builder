@@ -17,7 +17,8 @@ function saveRunResult(wfId, nodeId, result) {
   fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wfId) + '/results', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ node_id: nodeId, result }),
-  }).catch(() => {});
+  }).then(r => { if (!r.ok) toast('결과 저장 실패 (' + r.status + ')'); })
+    .catch(() => { toast('결과 저장 실패 — 네트워크'); });
 }
 
 // 조건식 컨텍스트에 이전 실행 결과 주입
@@ -57,10 +58,11 @@ async function addComment(nodeId, text) {
   const wf = currentWorkflow();
   if (!wf || !serverOnline) { toast('서버 미연결'); return; }
   try {
-    await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id) + '/comments', {
+    const r = await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id) + '/comments', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node_id: nodeId, author: '나', text }),
     });
+    if (!r.ok) { toast('댓글 실패 (' + r.status + ')'); return; }
     toast('댓글 추가됨');
     loadComments();
   } catch (e) { toast('댓글 실패'); }

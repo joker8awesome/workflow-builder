@@ -38,12 +38,17 @@ async function addTest() {
     '<button id="tt-save" class="tb-action" style="width:100%">저장</button></div>', 60000);
   document.querySelector('#tt-save').addEventListener('click', async () => {
     let input = {}, expected = {};
-    try { input = JSON.parse(document.querySelector('#tt-input').value || '{}'); } catch (e) {}
-    try { expected = JSON.parse(document.querySelector('#tt-expected').value || '{}'); } catch (e) {}
-    await fetch(API_BASE + '/api/tests', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wf_id: wf.id, name: document.querySelector('#tt-name').value.trim() || '테스트', input, expected }),
-    }).catch(() => {});
+    try { input = JSON.parse(document.querySelector('#tt-input').value || '{}'); }
+    catch (e) { toast('입력 JSON 파싱 실패 — 형식을 확인하라'); return; }
+    try { expected = JSON.parse(document.querySelector('#tt-expected').value || '{}'); }
+    catch (e) { toast('예상 JSON 파싱 실패 — 형식을 확인하라'); return; }
+    try {
+      const r = await fetch(API_BASE + '/api/tests', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wf_id: wf.id, name: document.querySelector('#tt-name').value.trim() || '테스트', input, expected }),
+      });
+      if (!r.ok) { toast('테스트 추가 실패 (' + r.status + ')'); return; }
+    } catch (e) { toast('테스트 추가 실패 — 네트워크'); return; }
     document.querySelectorAll('.toast').forEach(t => t.remove());
     toast('테스트 추가됨'); renderTests();
   });

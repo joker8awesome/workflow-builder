@@ -426,11 +426,12 @@ async function shareWorkflow() {
   if (!wf) { toast('워크플로우 없음'); return; }
   if (!serverOnline) { toast('서버 미연결 — 공유 불가'); return; }
   try {
-    await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id), {
+    const r = await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: wf.name, data: { nodes: wf.nodes, edges: wf.edges } }),
     });
+    if (!r.ok) { toast('공유 실패 (' + r.status + ')'); return; }
     const url = API_BASE + '/wf/' + encodeURIComponent(wf.id);
     navigator.clipboard?.writeText(url).catch(() => {});
     toastHTML('<span>공유 URL 복사됨<br><small style="color:var(--panel-text-dim)">' + escapeHtml(url) + '</small></span>', 4000);

@@ -100,6 +100,8 @@ async function registerWebhook(nodeId) {
     const j = await r.json();
     if (j.success) {
       toastHTML('<span>웹훅 등록됨<br><small style="color:var(--panel-text-dim)">' + escapeHtml(API_BASE + j.webhook_url) + '</small></span>', 5000);
+    } else {
+      toast('웹훅 실패' + (r.ok ? '' : ' (' + r.status + ')'));
     }
   } catch (e) { toast('웹훅 실패'); }
 }

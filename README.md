@@ -53,7 +53,6 @@ index.html          — 단일 HTML 앱 (4,300+줄)
 server.js           — Express + PG + WS (API 60+)
 agent_orchestrator.py — 에이전트 세션 오케스트레이터
 scheduler.py        — 크론 스케줄러
-fonts/              — 이사만루 폰트 3종
 MIGRATION.md        — 배포/이전 가이드 + DR
 ```
 

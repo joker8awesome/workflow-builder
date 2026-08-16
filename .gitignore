@@ -16,3 +16,8 @@ ops/queue-trigger.log
 ops/.queue-trigger.lock
 ops/.trigger-env
 ops/inbox.md
+
+# 키·토큰 — 실수로 커밋되지 않도록 (핵심 규칙: 키/토큰 커밋 금지)
+wf_user_key.txt
+*_key.txt
+*.key

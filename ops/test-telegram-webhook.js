@@ -187,6 +187,20 @@ function post(headers, body) {
     srv.includes('getUpdates 롱폴링'),
     '증상만 알리면 또 secret 을 의심하게 된다');
 
+  console.log('\n붙여넣기 오인 방지');
+  // 사용자가 봇 응답을 그대로 복사해 다시 보내는 일이 실제로 있었다 (msg_255·256).
+  // 봇 메시지는 is_bot 으로 걸러지지만 사람이 붙여넣으면 사람 계정에서 온다.
+  // 그 가짜 지시를 센터장이 처리하면 그 결과를 또 붙여넣는 순환이 생긴다.
+  check('길거나 여러 줄이면 큐에 넣지 않는다',
+    /looksPasted = !forced &&/.test(srv) && /body\.length > 400/.test(srv),
+    '봇 응답 붙여넣기가 그대로 지시로 적재된다');
+  check('막지 않고 되묻는다',
+    /if \(looksPasted\)[\s\S]{0,300}return send/.test(srv),
+    '판단할 수 없는 것을 임의로 버리면 진짜 지시를 잃는다');
+  check('/지시 로 강제할 수 있다',
+    /지시\|task\|cmd/.test(srv),
+    '길이 때문에 진짜 지시를 못 보내면 안 된다');
+
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));
   process.exit(fails.length ? 1 : 0);
 })();

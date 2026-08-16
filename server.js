@@ -885,8 +885,10 @@ async function handleUserMessage(msg) {
       '커멘드센터\n\n' +
       '/status  시스템 상태\n' +
       '/queue   대기 중인 지시·승인\n' +
+      '/지시 …  센터장에게 전달 (길어도 그대로)\n' +
       '/help    이 도움말\n\n' +
-      '그 밖의 문장은 센터장에게 지시로 전달됩니다.'));
+      '짧은 문장은 그대로 지시가 됩니다.\n' +
+      '길거나 여러 줄이면 붙여넣기로 보고 되묻습니다.'));
   }
 
   if (text === '/status' || text === '상태') {
@@ -914,11 +916,34 @@ async function handleUserMessage(msg) {
   }
 
   // --- 그 밖의 문장: 센터장 앞으로 큐에 넣는다 ---
+  //
+  // 다만 아무 문장이나 넣지는 않는다. 사용자가 봇 응답을 그대로 복사해 다시
+  // 붙여넣는 일이 실제로 있었다 (msg_255·256). 봇이 보낸 것은 is_bot 으로 걸러지지만,
+  // **사람이 붙여넣으면 사람 계정에서 오므로** 그 방어가 통하지 않는다.
+  // 그렇게 들어온 가짜 지시를 센터장이 받으면, 그 처리 결과를 또 붙여넣는 순환이 생긴다.
+  //
+  // 길거나 여러 줄인 것은 사람이 손으로 친 지시가 아니라 붙여넣기일 가능성이 높다.
+  // 확신할 수 없으므로 막지 않고 **되묻는다** — /지시 를 붙이면 그대로 들어간다.
+  const FORCE = /^\/(지시|task|cmd)\s+/;
+  const forced = FORCE.test(text);
+  const body = forced ? text.replace(FORCE, '').trim() : text;
+  const lines = body.split('\n').length;
+  const looksPasted = !forced && (body.length > 400 || lines > 6);
+
+  if (looksPasted) {
+    console.log(`[tg] 붙여넣기로 보여 보류: ${body.length}자 ${lines}줄`);
+    return send(notify.esc(
+      `길어서 지시로 넣지 않았습니다 (${body.length}자 ${lines}줄).\n\n` +
+      '봇 응답을 다시 붙여넣은 것이라면 그대로 두시면 됩니다.\n' +
+      '진짜 지시라면 앞에 /지시 를 붙여 다시 보내주세요.'));
+  }
+  if (!body) return send(notify.esc('내용이 비어 있습니다. /지시 뒤에 할 일을 적어주세요.'));
+
   try {
     const { rows } = await pool.query(
       `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
        VALUES ('instruction', $1, 'ag_claude_desktop', $2, 'pending', $3) RETURNING id`,
-      [`telegram:${who}`, JSON.stringify({ text, from: who, via: 'telegram' }),
+      [`telegram:${who}`, JSON.stringify({ text: body, from: who, via: 'telegram', forced }),
        'trace_tg_' + Date.now().toString(36)]);
     await send(notify.esc(`전달했습니다 (msg ${rows[0].id})\n센터장이 확인하면 보고가 옵니다.`));
     console.log(`[tg] 지시 큐 적재: msg ${rows[0].id}`);

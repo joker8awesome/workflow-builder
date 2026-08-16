@@ -161,28 +161,50 @@ function queueOfflineSync() {
 function flushOfflineQueue() {
   if (!serverOnline) return;
   try { offlineQueue = JSON.parse(localStorage.getItem(LS_KEY + '_offline') || '[]'); } catch (e) { offlineQueue = []; }
-  if (offlineQueue.length > 0) {
-    const wf = currentWorkflow();
-    if (wf) syncToServer();
-    localStorage.removeItem(LS_KEY + '_offline');
-    console.log('오프라인 편집 ' + offlineQueue.length + '건 동기화');
-    toast('오프라인 편집 ' + offlineQueue.length + '건 동기화됨');
-  }
+  if (offlineQueue.length === 0) return;
+  const count = offlineQueue.length;
+  // 큐를 지우기 전에 실제 sync 성공 여부를 확인한다.
+  // 이전엔 debounce syncToServer() 를 kick 하고 곧바로 removeItem 했다 —
+  // sync 가 실패해도 큐가 사라져 오프라인 편집 유실이 났다. (#29 리뷰1 결함)
+  syncToServerNow().then((ok) => {
+    if (ok) {
+      localStorage.removeItem(LS_KEY + '_offline');
+      console.log('오프라인 편집 ' + count + '건 동기화');
+      toast('오프라인 편집 ' + count + '건 동기화됨');
+    } else {
+      console.warn('오프라인 큐 flush 실패 — 큐 유지');
+      toast('오프라인 편집 동기화 실패 — 다음 접속 시 재시도');
+    }
+  });
 }
 function syncToServer() {
   if (!serverOnline) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(async () => {
-    try {
-      for (const wf of store.workflows) {
-        await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id), {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: wf.name, data: { nodes: wf.nodes, edges: wf.edges } }),
-        });
+  syncTimer = setTimeout(() => { syncToServerNow(); }, 800);
+}
+// 즉시 실행 + 결과 확인 버전. flushOfflineQueue 처럼 성공/실패를 알아야 하는 곳에서 쓴다.
+// fetch 응답 상태를 확인하지 않으면 500·404 도 조용히 넘어간다 (#29 리뷰1 결함).
+async function syncToServerNow() {
+  if (!serverOnline) return false;
+  try {
+    for (const wf of store.workflows) {
+      const r = await fetch(API_BASE + '/api/workflows/' + encodeURIComponent(wf.id), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: wf.name, data: { nodes: wf.nodes, edges: wf.edges } }),
+      });
+      if (!r.ok) {
+        console.warn('server sync HTTP ' + r.status + ' for ' + wf.id);
+        queueOfflineSync();
+        return false;
       }
-    } catch (e) { console.warn('server sync failed', e); queueOfflineSync(); }
-  }, 800);
+    }
+    return true;
+  } catch (e) {
+    console.warn('server sync failed', e);
+    queueOfflineSync();
+    return false;
+  }
 }
 let store = { workflows: [], activeWorkflowId: null };
 let saveTimer = null;

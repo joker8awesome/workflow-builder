@@ -676,10 +676,10 @@
   <div id="ctx-menu"></div>
   <div id="minimap"></div>
   <div id="zoom-controls">
-    <button id="zoom-in" class="tb-action" title="확대">+</button>
+    <button id="zoom-in" class="tb-action" title="확대" aria-label="확대">+</button>
     <span id="zoom-level">100%</span>
-    <button id="zoom-out" class="tb-action" title="축소">−</button>
-    <button id="zoom-reset" class="tb-action" title="원위치">⤾</button>
+    <button id="zoom-out" class="tb-action" title="축소" aria-label="축소">−</button>
+    <button id="zoom-reset" class="tb-action" title="원위치" aria-label="확대 초기화">⤾</button>
   </div>
   <div id="run-overlay" style="display:none">
     <div id="run-panel">
@@ -700,7 +700,7 @@
     <button id="m-btn-png" class="tb-action">SVG</button>
     <button id="m-btn-md" class="tb-action">MD</button>
     <button id="m-btn-stats" class="tb-action">통계</button>
-    <button id="m-btn-more" class="tb-action">•••</button>
+    <button id="m-btn-more" class="tb-action" aria-label="더보기">•••</button>
   </div>
   <!-- 모바일 더보기 메뉴 -->
   <div id="mobile-menu" style="display:none;position:fixed;bottom:70px;right:12px;z-index:80;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:14px;padding:10px;min-width:180px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
@@ -729,13 +729,13 @@
   <div id="trace-panel" style="display:none;position:fixed;top:60px;left:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h4 style="color:var(--accent);font-size:14px">실행 트레이스</h4>
-      <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="트레이스 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <select id="trace-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
         <option value="">전체</option><option value="fail">실패만</option><option value="slow">느린 스팬</option>
       </select>
-      <button id="trace-refresh" class="tb-action" style="padding:3px 8px;font-size:11px">⟳</button>
+      <button id="trace-refresh" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="트레이스 새로고침">⟳</button>
     </div>
     <div id="trace-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
   </div>
@@ -743,7 +743,7 @@
   <div id="agents-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">🤖 에이전트 레지스트리</h4>
-      <button id="agents-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="agents-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="에이전트 목록 닫기">✕</button>
     </div>
     <button id="agent-add" class="tb-action" style="width:100%;margin-bottom:12px">+ 에이전트 등록</button>
     <div id="agents-list" style="font-size:13px;color:var(--panel-text)"></div>
@@ -752,7 +752,7 @@
   <div id="agent-dash" style="display:none;position:fixed;top:60px;right:16px;z-index:71;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">📊 에이전트 대시보드</h4>
-      <button id="agent-dash-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="agent-dash-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="에이전트 대시보드 닫기">✕</button>
     </div>
     <div id="agent-dash-body" style="font-size:13px;color:var(--panel-text)"></div>
     <button id="agent-knowledge-btn" class="tb-action" style="width:100%;margin-top:10px">🧠 지식 기록</button>
@@ -763,8 +763,8 @@
       <h4 style="color:var(--accent);font-size:15px">🔁 에이전트 세션/메시지</h4>
       <div style="display:flex;gap:6px">
         <button id="session-run" class="tb-action" style="padding:3px 8px;font-size:11px">▶ 실행</button>
-        <button id="session-refresh" class="tb-action" style="padding:3px 8px;font-size:11px">⟳</button>
-        <button id="session-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+        <button id="session-refresh" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="세션 새로고침">⟳</button>
+        <button id="session-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="세션 닫기">✕</button>
       </div>
     </div>
     <div id="session-body" style="font-size:12px;color:var(--panel-text)"></div>
@@ -773,7 +773,7 @@
   <div id="market-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:73;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">🛒 워크플로우 템플릿 마켓</h4>
-      <button id="market-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="market-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="마켓 닫기">✕</button>
     </div>
     <button id="tpl-publish" class="tb-action" style="width:100%;margin-bottom:10px">+ 현재 워크플로우 템플릿 게시</button>
     <div id="market-body" style="font-size:12px;color:var(--panel-text)"></div>
@@ -786,7 +786,7 @@
         <select id="feed-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
           <option value="">전체</option><option value="run">실행</option><option value="approve">승인</option><option value="fail">실패</option>
         </select>
-        <button id="feed-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+        <button id="feed-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="피드 닫기">✕</button>
       </div>
     </div>
     <div id="feed-body" style="font-size:12px;color:var(--panel-text)"></div>
@@ -795,7 +795,7 @@
   <div id="test-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:75;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">🧪 워크플로우 테스트/회귀 게이트</h4>
-      <button id="test-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="test-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="테스트 패널 닫기">✕</button>
     </div>
     <button id="test-add" class="tb-action" style="width:100%;margin-bottom:8px">+ 테스트 케이스 추가</button>
     <button id="test-run-all" class="tb-action" style="width:100%;margin-bottom:10px;background:var(--accent);border-color:var(--accent);color:#04100a;font-weight:700">▶ 회귀 게이트 실행</button>
@@ -805,7 +805,7 @@
   <div id="gov-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:76;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">🛡️ 거버넌스</h4>
-      <button id="gov-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="gov-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="거버넌스 닫기">✕</button>
     </div>
     <div id="gov-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
@@ -813,7 +813,7 @@
   <div id="edge-log-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:77;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:320px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h4 style="color:var(--accent);font-size:14px">🔗 연결 기록</h4>
-      <button id="edgelog-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="edgelog-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="엣지 로그 닫기">✕</button>
     </div>
     <div id="edge-log-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
@@ -832,7 +832,7 @@
   <div class="cred-modal__panel" role="dialog" aria-labelledby="credModalTitle">
     <header class="cred-modal__header">
       <h2 id="credModalTitle">🔑 자격증명 발급</h2>
-      <button type="button" class="cred-modal__close" onclick="closeCredentialModal()">✕</button>
+      <button type="button" id="cred-modal-close" class="cred-modal__close" onclick="closeCredentialModal()" aria-label="자격증명 모달 닫기">✕</button>
     </header>
 
     <!-- 발급 폼 -->
@@ -904,7 +904,7 @@
   <div id="mcp-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:78;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <h4 style="color:var(--accent);font-size:14px">🤖 MCP 지시 <span id="mcp-status" style="font-size:11px;color:var(--panel-text-faint)"></span></h4>
-      <button id="mcp-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="mcp-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="MCP 패널 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
       <button class="tb-action mcp-quick" data-cmd="펜딩 작업 확인해줘" style="flex:1;padding:5px 6px;font-size:11px">📥 펜딩</button>
@@ -920,7 +920,7 @@
   <div id="team-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:79;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:520px;max-height:78vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:14px" id="team-title">🤝 에이전트 팀</h4>
-      <button id="team-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="team-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="팀 현황 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button class="tb-action" id="team-refresh" style="flex:1">🔄 새로고침</button>
@@ -944,14 +944,14 @@
   <div id="stats-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:360px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 style="color:var(--accent);font-size:15px">📊 실행 통계</h4>
-      <button id="stats-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="stats-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="통계 닫기">✕</button>
     </div>
     <div id="stats-body" style="font-size:13px;color:var(--panel-text)"></div>
   </div>
   <div id="runlog-panel" style="display:none;position:fixed;bottom:16px;left:16px;z-index:45;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:12px 16px;width:340px;max-height:200px;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <strong style="color:var(--accent);font-size:13px">실행 로그</strong>
-      <button id="runlog-close" class="tb-action" style="padding:3px 8px;font-size:11px">✕</button>
+      <button id="runlog-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="실행 로그 닫기">✕</button>
     </div>
     <div id="runlog-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
   </div>

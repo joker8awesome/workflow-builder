@@ -1,25 +1,25 @@
-// Service Worker — PWA 오프라인 캐시 (v3: 더보기 메뉴 캐시 문제 해결 — 네트워크 우선 강화)
-const CACHE = 'wf-builder-v6'; // v5: 캐시 완전 무효화 — 이전 SW가 남긴 캐시 전부 삭제 // v4: sync-status 이동 반영 — 구버전 캐시 강제 무효화
+// Service Worker — PWA 오프라인 캐시 (v7: js/ 파일 이름 정리 — Phase 2-1 지시서 #28)
+const CACHE = 'wf-builder-v7'; // v6~v3 이력: 캐시 무효화·더보기 메뉴 캐시 문제·sync-status 이동
 const ASSETS = [
   './index.html',
   './css/main.css',
   './css/mobile.css',
-  './js/agent1.js',
-  './js/agent2.js',
-  './js/agentux.js',
-  './js/confidence.js',
-  './js/corea.js',
-  './js/coreb.js',
-  './js/hitl.js',
-  './js/market.js',
-  './js/session.js',
-  './js/tests.js',
-  './js/ux1.js',
-  './js/ux2.js',
-  './js/ux3.js',
-  './js/ux4.js',
-  './js/ux5.js',
-  './js/ux6.js',
+  './js/core-store.js',
+  './js/canvas-render.js',
+  './js/undo-run-engine.js',
+  './js/groups-export-ws.js',
+  './js/exec-status.js',
+  './js/touch-input.js',
+  './js/script-exec-pwa.js',
+  './js/llm-trace.js',
+  './js/virtual-render-palette.js',
+  './js/agents-crud.js',
+  './js/node-status-handoff.js',
+  './js/approvals-metrics.js',
+  './js/sessions-messages.js',
+  './js/templates-market.js',
+  './js/activity-feed.js',
+  './js/tests-more-menu.js',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

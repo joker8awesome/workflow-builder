@@ -5,7 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const KEY = 'wf_ak_ag_hermes_ookXdnYP1LABSNJTunK58IE4qtO9p-NI';
+// 키를 여기에 적지 마라 — 이 파일은 공개 저장소에 올라간다.
+const KEY = process.env.WF_HERMES_KEY || '';
+if (!KEY) { console.error('WF_HERMES_KEY 가 설정돼 있지 않다. export 후 다시 실행해라.'); process.exit(2); }
 const URL = 'http://127.0.0.1:3737/api/llm/worker';
 const TRACE = 'fleet-review1-20260816';
 const OUT = path.join(__dirname, 'results.json');

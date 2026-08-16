@@ -56,7 +56,7 @@
 `D:\Comment_Center\.mcp.json` 7번 줄:
 
 ```
-"Authorization": "Bearer wf_ak_ag_claude_desktop_ADsJ8h35eyXXa6x2aFS3DoBopeZMZhe4"
+"Authorization": "Bearer wf_ak_ag_claude_desktop_<폐기된 키 — 2026-08-17 회전>"
 ```
 
 이 키는 **`mcp:admin` 스코프**를 가진다 (`agent.whoami`로 확인). 즉 이 문자열 하나면 워크플로우 실행·에이전트 조작이 가능하다.
@@ -77,6 +77,19 @@ https://raw.githubusercontent.com/joker8awesome/workflow-builder/main/.gitignore
 - **`.mcp.json`이 200이고 `wf_ak_`가 보이면** → **즉시 키 폐기·회전.**
 
 → **저장소 클론으로 직접 확인 완료. 노출 없음.**
+
+---
+
+> 🔴 **2026-08-17 추가 — 위 결론은 이 문서 자신에 의해 뒤집혔다.**
+>
+> 이 문서를 쓸 때 `D:\Comment_Center` 는 git 저장소가 아니었고, 그래서
+> "여기서 `git init` → push 하는 순간 키가 공개된다" 고 경고했다.
+> 그 뒤 실제로 `git init` 되어 **이 문서가 키를 담은 채로 공개 저장소에 올라갔다.**
+> 경고가 경고한 그 경로로 유출이 일어났다.
+>
+> 위 본문의 키 문자열은 폐기·회전 대상이다. `.mcp.json` 을 `.gitignore` 에
+> 넣는 것만으로는 부족했다 — **키를 인용한 문서**가 남아 있었다.
+> 앞으로 키는 문서에도 적지 마라. `wf_ak_ag_..._<앞 6자>…` 로만 적는다.
 
 </details>
 

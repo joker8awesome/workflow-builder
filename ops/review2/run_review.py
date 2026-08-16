@@ -10,7 +10,10 @@ import json, os, subprocess, sys, time, urllib.request
 ROOT = '/opt/data/projects/workflow-builder'
 OUT = os.path.join(ROOT, 'ops', 'review2', 'results.json')
 TRACE = 'review2-20260817'
-KEY = 'wf_ak_ag_hermes_ookXdnYP1LABSNJTunK58IE4qtO9p-NI'
+# 키를 여기에 적지 마라 — 이 파일은 공개 저장소에 올라간다.
+KEY = os.environ.get('WF_HERMES_KEY', '')
+if not KEY:
+    sys.exit('WF_HERMES_KEY 가 설정돼 있지 않다. export 후 다시 실행해라.')
 URL = 'http://localhost:3737/api/llm/worker'
 
 PROMPT_TAIL = """

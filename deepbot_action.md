@@ -251,3 +251,4 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 키 파일 gitignore — wf_user_key.txt 무방비 노출(커밋 이력 없음 확인), *_key.txt·*.key 패턴 추가 (817d5e9) | ✅ |
 | 2026-08-16 | 지시서#23 작성·전달 — 테스트 격리 배포 + VPS 키 파일 점검 | 대기 |
 | 2026-08-16 | 환경 메모: Git Bash에서 curl -d 로 한글 전송 시 깨짐 → 파일+--data-binary 사용 (텔레그램 알림 깨짐으로 발견) | 확인 |
+| 2026-08-16 | 지시서#23 수행 (자동 픽업) — git pull(fb2a6b9), npm test 11스위트 173건 통과, seen 파일 test 전후 동일(`{"seen":["msg_178"],"tries":{"msg_180":1}}`) 확인, 추적 키·*.txt 없음, pm2 restart 불필요 | ✅ 완료 |

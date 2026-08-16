@@ -34,10 +34,15 @@ const AGENT = process.env.WF_AGENT_ID || 'ag_hermes';
 const MCP = process.env.WF_MCP_URL || 'https://187.127.124.16.sslip.io/mcp';
 const KEY = process.env.WF_MCP_KEY || '';
 const CMD = process.env.WF_TRIGGER_CMD || '';
-const STATE = path.join(ROOT, 'ops', '.queue-trigger-seen.json');
-const OUT = path.join(ROOT, 'ops', '.queue-trigger.json');
+// 상태 파일이 놓이는 곳. 기본은 ops/ 지만 테스트는 임시 디렉터리를 가리킨다.
+// 예전엔 경로가 박혀 있어서 VPS 에서 npm test 를 돌리면 트리거의 seen 이 지워지고
+// 잠금까지 뺏겼다 — 아직 pending 인 지시가 다시 기동되는 사고로 이어진다.
+// (할매봇이 지시서 #22 검증 중에 잠금 경합으로 발견했다)
+const DIR = process.env.WF_TRIGGER_DIR || path.join(ROOT, 'ops');
+const STATE = path.join(DIR, '.queue-trigger-seen.json');
+const OUT = path.join(DIR, '.queue-trigger.json');
 
-const LOCK = path.join(ROOT, 'ops', '.queue-trigger.lock');
+const LOCK = path.join(DIR, '.queue-trigger.lock');
 const LOCK_STALE_MS = 15 * 60 * 1000;   // 기동 명령 타임아웃(10분)보다 넉넉히
 
 function log(...a) { console.log(`[${new Date().toISOString()}]`, ...a); }

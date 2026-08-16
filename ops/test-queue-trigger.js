@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 /**
- * queue-trigger 검증 — 로컬 목 서버로 확인. 프로덕션 큐를 건드리지 않는다.
+ * queue-trigger 검증 — 로컬 목 서버로 확인. 프로덕션을 건드리지 않는다.
+ *
+ * 큐만이 아니라 **상태 파일도** 건드리면 안 된다. 예전엔 ops/ 의 실제 경로를 써서,
+ * VPS 에서 npm test 를 돌리면 트리거의 seen 이 지워지고 잠금까지 뺏겼다.
+ * 아직 pending 인 지시가 다시 기동되는 사고로 이어진다.
+ * WF_TRIGGER_DIR 로 임시 디렉터리를 가리켜 격리한다.
  *
  * 이 스크립트는 cron 이 1분마다 돌린다. 두 가지가 특히 중요하다:
  *   1) 같은 지시로 반복 기동하지 않을 것 — seen 을 파일에 남겨야 한다.
@@ -15,11 +20,17 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
+const os = require('os');
+
 const ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(ROOT, 'ops', 'queue-trigger.js');
-const STATE = path.join(ROOT, 'ops', '.queue-trigger-seen.json');
-const OUT = path.join(ROOT, 'ops', '.queue-trigger.json');
-const MARK = path.join(ROOT, 'ops', '.trigger-test-marker');
+
+// 프로덕션 상태와 섞이지 않도록 매 실행마다 별도 디렉터리를 쓴다
+const DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'wf-trigger-test-'));
+const STATE = path.join(DIR, '.queue-trigger-seen.json');
+const OUT = path.join(DIR, '.queue-trigger.json');
+const LOCK = path.join(DIR, '.queue-trigger.lock');
+const MARK = path.join(DIR, '.trigger-test-marker');
 
 let fails = [];
 function check(name, cond, detail) {
@@ -48,7 +59,7 @@ function run(env = {}) {
   return new Promise(resolve => {
     execFile(process.execPath, [SCRIPT], {
       cwd: ROOT, encoding: 'utf8',
-      env: { ...process.env, WF_MCP_KEY: 'test-key', WF_MCP_URL: URL_, WF_AGENT_ID: 'ag_test', ...env },
+      env: { ...process.env, WF_MCP_KEY: 'test-key', WF_MCP_URL: URL_, WF_AGENT_ID: 'ag_test', WF_TRIGGER_DIR: DIR, ...env },
     }, (err, stdout, stderr) => {
       resolve({ status: err ? (err.code ?? 1) : 0, stdout, stderr });
     });
@@ -129,7 +140,6 @@ srv.listen(0, '127.0.0.1', async () => {
   // 잠금을 WF_TRIGGER_CMD 쪽(flock)에 두면 이 스크립트는 '실행했다'고 믿고
   // seen 에 기록하지만 실제로는 아무것도 안 했으므로 그 지시는 영원히 사라진다.
   cleanup();
-  const LOCK = path.join(ROOT, 'ops', '.queue-trigger.lock');
   try { fs.unlinkSync(LOCK); } catch (e) {}
   TASKS = [{ message_id: 'msg_lock', from_agent: 'x', trace_id: 'tl', payload_ref: '' }];
   fs.writeFileSync(LOCK, '99999');                 // 다른 실행이 진행 중인 상황
@@ -158,7 +168,18 @@ srv.listen(0, '127.0.0.1', async () => {
   // 실제로 있었던 사고다. 스케줄러가 저장소 밖 경로를 요구해서 리다이렉트 스텁을 만들었는데,
   // 그걸 ops/queue-trigger.sh 자리에 커밋해버려 스크립트가 자기 자신을 exec 하게 됐다.
   // 문법 오류가 아니라 조용히 도는 무한 루프라, 큐만 안 비워지고 아무 신호도 없다.
-  console.log('\n8) 래퍼가 자기 자신을 부르지 않는가');
+  console.log('\n8) 이 테스트가 프로덕션 상태를 건드리지 않는가');
+  // 할매봇이 지시서 #22 검증 중 발견했다 — 트리거가 도는 중에 npm test 를 돌리면
+  // 잠금을 뺏고 seen 을 지운다. 그러면 아직 pending 인 지시가 다시 기동된다.
+  check('테스트 상태 파일이 저장소 밖에 있다',
+    !DIR.startsWith(ROOT),
+    `DIR=${DIR} — ops/ 안이면 VPS 에서 npm test 가 트리거 상태를 지운다`);
+  const JS = fs.readFileSync(path.join(__dirname, 'queue-trigger.js'), 'utf8');
+  check('queue-trigger.js 가 WF_TRIGGER_DIR 를 따른다',
+    /WF_TRIGGER_DIR/.test(JS),
+    '경로가 박혀 있으면 격리할 방법이 없다');
+
+  console.log('\n9) 래퍼가 자기 자신을 부르지 않는가');
   const SH = fs.readFileSync(path.join(__dirname, 'queue-trigger.sh'), 'utf8');
   check('queue-trigger.sh 가 자기 경로를 exec 하지 않는다',
     !/exec\s+\S*queue-trigger\.sh/.test(SH),
@@ -169,6 +190,7 @@ srv.listen(0, '127.0.0.1', async () => {
     'exec 뒤로는 코드가 돌지 않아, 앞에서 남기지 않으면 cron 기동 여부를 알 수 없다');
 
   cleanup();
+  try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {}
   srv.close();
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));
   process.exit(fails.length ? 1 : 0);

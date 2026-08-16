@@ -31,7 +31,7 @@ const SUITES = [
   { name: 'JSONB 파싱 일원화 (jsonb)', file: 'ops/test-jsonb.js', runner: 'node', expect: 19 },
   { name: '라우트 인증 (route-auth)', file: 'ops/test-route-auth.js', runner: 'node', expect: 5 },
   { name: '스케줄러 큐 필터 (scheduler-queue)', file: 'ops/test-scheduler-queue.py', runner: 'python', expect: 12 },
-  { name: '큐 트리거 (queue-trigger)', file: 'ops/test-queue-trigger.js', runner: 'node', expect: 26 },
+  { name: '큐 트리거 (queue-trigger)', file: 'ops/test-queue-trigger.js', runner: 'node', expect: 28 },
   { name: '메시지 상태 어휘 (message-status)', file: 'ops/test-message-status.js', runner: 'node', expect: 6 },
 ];
 

@@ -299,3 +299,4 @@ agent.payload.get / report / checkpoint
 | 2026-08-17 | detached:true는 Windows에서 실패 확인(shell:true와 함께 쓰면 cmd.exe 손자가 부모와 함께 죽음, spawn 이벤트는 뜨지만 출력 0). close를 기다리는 방식으로 전환, PID 생사 기반 잠금 추가, 폴링 주기 15분→5분. 검사 3건 (12스위트 199건) | ✅ |
 | 2026-08-17 | #32 배포 확인 — role=dialog 15개, CACHE v8, css/cred-modal.css, js/esc-panel-close.js 전부 원격 반영 | ✅ |
 | 2026-08-17 | 세션 hang 원인 규명·수정 — 할매봇 로그의 spawnSync ETIMEDOUT 3회(13:44·13:55·14:06)는 queue-trigger.js의 execSync 10분 타임아웃. 배치 A·B·C가 19분 걸려 끊겼고 재시도 정책이 3회 증폭. 실패가 아니라 작업 중이었음. 타임아웃 30분(WF_TRIGGER_TIMEOUT_MS)·잠금회수는 타임아웃+5분으로 연동·ETIMEDOUT 구분 로그. 검사 3건 (12스위트 202건) | ✅ |
+| 2026-08-17 | 지시서#33 작성·전달 — 코드리뷰 2차(네트워크 경계 12개). #30 대체: 워커가 Kimi로 바뀌고 타임아웃 10→30분이라 전제가 달라짐. 12개 함수 실재 재확인(cd73a1e 기준), truncated면 2500 재호출 의무, "최종 판단 불가 0"이 채택률 유효 조건 | 대기 |

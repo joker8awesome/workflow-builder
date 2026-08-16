@@ -289,3 +289,4 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 워커 절단 대응 — max_tokens 800 고정 → 요청별 지정(기본 1500·상한 4000), finish_reason=length를 truncated로 응답·보고에 노출, ok:false 기록. 검사 2건 추가 | ✅ |
 | 2026-08-16 | send_to_center.py 인자 가드 — argparse 없어 --help가 그대로 발송되던 문제(msg_234·249 헛보고 2건). 요약 필수·플래그 거부·5자 미만 거부, psycopg2 import를 가드 뒤로 이동 | ✅ |
 | 2026-08-16 | 지시서#30 작성·전달 — c0d64c6 push 승인 + 코드리뷰 2차 배치 12개(네트워크 경계 함수). 1차 진짜 결함 2건이 둘 다 네트워크 경계라 같은 광맥을 판다. max_tokens 1500 지정·truncated면 2500 재호출 의무화, "최종 판단 불가 0"을 채택률 유효 조건으로 명시 | 대기 |
+| 2026-08-16 | 지시서#30 수신·판단유보 (msg_251 claim, phase2-review-2 브랜치 main=ecfd3d6 기준 생성) — [1] `c0d64c6` push는 프로덕션 배포·승인 게이트. [2] 리뷰만 선행하려 해도 워커 truncated 노출은 a0e7f42 커밋의 서버 코드가 프로덕션에서 돌아야 유효 → pm2 restart 필요 → 실질적 배포. 사용자 방침("판단이 서지 않으면 실행하지 말고 보고만 하라") 준수. 센터장에 msg 252 report 발송, 데카르트님 승인 대기 | 승인대기 |

@@ -104,6 +104,15 @@ module.exports = function createCredentialsRouter(db) {
   router.get('/api/agents/:id/credentials', adminOnly, async (req, res) => {
     try {
       const { id: agent_id } = req.params;
+
+      const { rows: agentRows } = await db.query(
+        'SELECT 1 FROM agents WHERE id = $1',
+        [agent_id]
+      );
+      if (agentRows.length === 0) {
+        return res.status(404).json({ error: 'agent_not_found' });
+      }
+
       const { rows } = await db.query(
         `SELECT id, name, key_prefix, scopes,
                 created_at, last_used_at, expires_at, revoked_at
@@ -115,7 +124,7 @@ module.exports = function createCredentialsRouter(db) {
       res.json({ credentials: rows });
     } catch (err) {
       console.error('GET credentials failed:', err);
-      res.status(500).json({ error: 'internal_error', detail: err.message });
+      res.status(500).json({ error: 'internal_error' });
     }
   });
 

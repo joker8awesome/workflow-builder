@@ -101,12 +101,21 @@ for (const p of EXPECTED_MAYBE) {
     'maybeAuth(mcp:execute) 로 교체되지 않았다');
 }
 
-// /api/credentials 는 무조건 mcp:admin 이어야 한다 (maybeAuth 아님)
-const credsRoute = routes.find(x => x.path === '/api/credentials');
-check('/api/credentials → requireScope(mcp:admin)', credsRoute && /requireScope/.test(SRC.match(new RegExp(`app\\.post\\('/api/credentials',[^\\n]*`))?.[0] || ''),
-  '/api/credentials 가 maybeAuth 로 열려 있다 — execute 키로 admin 키 발급 가능');
-check('/api/credentials 가 maybeAuth 가 아님', credsRoute && !credsRoute.conditional,
-  '/api/credentials 에 maybeAuth 가 붙어 있다');
+// #38 — POST /api/credentials 는 아예 제거됐다 (항상 500 + key_hash 미기록 결함).
+const postCreds = routes.find(x => x.path === '/api/credentials' && x.method === 'POST');
+check('POST /api/credentials 제거됨 (#38)', !postCreds,
+  'POST 라우트가 아직 있다. 발급은 credentials-api.js 의 /api/agents/:id/credentials 를 쓴다');
+// GET 은 admin + 복호화 없음이어야 한다
+const getCreds = SRC.match(/app\.get\('\/api\/credentials',[\s\S]*?\n\}\);/);
+check('GET /api/credentials → requireScope(mcp:admin)',
+  getCreds && /requireScope\(\s*pool,\s*'mcp:admin'/.test(getCreds[0]),
+  'GET 이 mcp:admin 으로 잠겨 있지 않다');
+check('GET /api/credentials 에 decryptSecret 없음',
+  getCreds && !/decryptSecret/.test(getCreds[0]),
+  'GET 핸들러 안에서 여전히 볼트를 연다');
+check('GET /api/credentials SELECT 에 api_key 없음',
+  getCreds && !/SELECT[^]*api_key/.test(getCreds[0]),
+  '응답 SELECT 에 api_key 컬럼이 남아 있다');
 
 console.log('\n' + (fails.length ? `실패 ${fails.length}건` : '전부 통과'));
 const warned = Object.entries(ALLOWED_PUBLIC).filter(([, v]) => v.startsWith('⚠'));

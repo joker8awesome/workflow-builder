@@ -1255,26 +1255,23 @@ app.get('/api/trust', async (req, res) => {
 });
 
 // === 1. 에이전트 자격증명/권한 API ===
-app.get('/api/credentials', async (req, res) => {
-  try {
-    const { rows } = await pool.query('SELECT agent_id, api_key, scopes, encrypted FROM agent_credentials');
-    const creds = rows.map(r => ({ ...r, api_key: r.encrypted ? decryptSecret(r.api_key) : r.api_key }));
-    res.json({ success: true, credentials: creds });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
-app.post('/api/credentials', requireScope(pool, 'mcp:admin', { allowAccessToken: true }), async (req, res) => {
-  try {
-    const { agent_id, scopes } = req.body || {};
-    if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
-    const key = 'ag_' + require('crypto').randomBytes(12).toString('hex');
-    await pool.query(
-      `INSERT INTO agent_credentials (agent_id, api_key, scopes, encrypted) VALUES ($1,$2,$3,true)
-       ON CONFLICT (agent_id) DO UPDATE SET api_key=EXCLUDED.api_key, scopes=EXCLUDED.scopes, encrypted=true`,
-      [agent_id, encryptSecret(key), JSON.stringify(scopes || ['execute', 'report'])]
-    );
-    res.json({ success: true, api_key: key });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
+// GET 은 admin 에게도 키 원문을 보내지 않는다 — 발급 시 1회만 보여주는 것이 원칙.
+// 볼트를 여는 코드를 없애 WF_VAULT_KEY 유출이 전체 키 유출이 되는 구조를 제거했다 (지시서 #38).
+app.get('/api/credentials',
+  requireScope(pool, 'mcp:admin', { allowAccessToken: true }),
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, agent_id, name, key_prefix, scopes, created_at,
+                last_used_at, revoked_at, expires_at
+           FROM agent_credentials ORDER BY id DESC`);
+      res.json({ success: true, credentials: rows });
+    } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+  });
+// POST /api/credentials 는 제거했다 (2026-08-17, 지시서 #38).
+// ON CONFLICT 대상 제약 부재로 항상 500 이었고, key_hash 를 쓰지 않아
+// 설령 INSERT 돼도 그 키로는 인증이 되지 않았다.
+// 발급은 credentials-api.js 의 POST /api/agents/:id/credentials 를 쓴다.
 
 // === 2. 감사 로그 API ===
 app.post('/api/audit', maybeAuth('mcp:execute'), async (req, res) => {

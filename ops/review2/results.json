@@ -1,0 +1,93 @@
+{
+  "checkServer": {
+    "answer": "아니요, 500이면 죽은 것으로 처리됩니다. `r.ok`는 상태 코드 200–299일 때만 true이므로, 서버가 500(또는 404, 502 등)을 **응답했음에도** `serverOnline`은 false가 됩니다. 즉 이 함수는 조용히 실패하는 지점이 여럿 있습니다. 첫째, \"서버에 도달 불가\"와 \"서버가 에러를 응답\"을 구분하지 않아, 살아서 응답한 서버를 오프라인으로 표시합니다. 둘째, 네트워크 오류·CORS 차단·2.5초 타임아웃처럼 서버는 살아있지만 fetch가 실패·지연된 경우도 모두 catch로 빠져 false가 되며, 셋째로 catch가 모든 예외를 삼키기 때문에(`AbortSignal.timeout` 미지원 환경에서의 동기적 TypeError 포함) 실패 원인이 어디에도 기록되지 않고, 호출자는 단순히 `false`만 받아 원인을 알 수 없습니다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "loadFromServer": {
+    "answer": "조용히 실패하는 지점이 여러 곳이다: ① `checkServer()`가 false를 반환하면 아무 로그 없이 종료되고, ② `j.success`가 falsy이거나 `workflows` 목록이 빈 배열이어도 마찬가지로 무기록 false 반환된다. ③ 개별 항목 루프에서는 `d.success`/`d.workflow` 부재, `nodes`·`edges`가 배열이 아닌 경우 해당 항목을 로그 없이 건너뛰며, 전부 걸러져 `loaded`가 비면 catch조차 거치지 않고 조용히 false를 반환한다. ④ 반대로 일부만 유효하면 유효한 부분집합으로 `store.workflows`를 덮어쓰므로 깨진 항목의 로컬 데이터가 아무 경고 없이 유실되고, 성공 시 `activeWorkflowId`도 `loaded[0].id`로 조용히 바뀐다. ⑤ 루프 안의 중첩 `fetch`/`json()`이 한 번이라도 예외를 던지면 그 시점에 이미 로드된 항목까지 전부 버리고 catch로 빠져 `console.warn` 하나만 남긴 채 false를 반환한다. 또한 HTTP 상태 코드(`r.ok`) 검사가 없어 오류 응답 판별을 오직 `j.success` 파싱에 의존한다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "loadTplFromServer": {
+    "answer": "이 함수의 조용한 실패 지점은 두 번의 fetch 모두 HTTP 응답 상태(r.ok)를 검사하지 않고 곧바로 json()을 파싱한다는 점, 그리고 detail 응답에서 workflow나 data가 없을 때 오류로 처리하지 않고 { nodes: [], edges: [] }로 폴백한다는 점입니다. 즉 서버가 404/500 오류를 반환하거나 workflow 필드가 없는 응답을 줘도 catch로 빠지지 않고, 빈 노드·엣지를 가진 템플릿이 store.workflows에 push되고 activeWorkflowId가 그것으로 바뀌며 saveStore(true)와 renderAll()이 호출된 뒤 '✅ 템플릿 설치' 성공 토스트가 뜹니다. 결과적으로 실패했는데도 사용자는 성공 메시지를 보고, 화면에는 이름만 있고 내용이 비어 있는 워크플로우가 활성 상태로 표시되며, 첫 번째 목록 fetch 실패나 wf 미발견, JSON.parse 실패만 catch의 실패 토스트로 이어지므로 실패 원인 구분도 불가능합니다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "updateSyncStatus": {
+    "answer": "조용히 실패하는 지점이 한 곳 확실히 있다: `if (!el) return;` — `sync-status` 요소가 DOM에 없으면 아무 로그나 오류 없이 그냥 반환되어, 상태 표시가 갱신되지 않는데 호출 쪽에서는 실패 여부를 알 수 없다. 또한 이 함수는 화면에 표시할 상태를 오직 호출 시점의 `wfAuthFailed`와 `serverOnline` 값으로만 결정하고 실제 연결 여부를 스스로 확인하지 않으므로, 이 플래그들이 실제 상태보다 오래된 값이라면 배지는 실제와 어긋난 채 표시된다. 다만 그 플래그들이 언제·어떻게 갱신되는지는 이 코드에 없으므로 실제로 어긋나는 상황이 발생하는지는 확실하지 않다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "runNodeAction": {
+    "answer": "**조용히 실패할 수 있는 지점**: 가장 큰 문제는 `new Promise(async (resolve) => { ... })` 구조 자체다 — async executor 안에서 `runNodeScript`가 reject하거나 `toast`·`currentWorkflow`·`saveRunResult`·`traceAdd` 같은 호출이 throw하면 `resolve`가 호출되지 않아 반환된 Promise가 영구히 pending 상태로 남고, 노드는 'running'에서 멈춘 채 오류가 호출자에게 전달되지 않는다. 그 외에도 ① `currentWorkflow()`가 falsy(`wf` 없음)이면 결과 저장이 아무 알림 없이 건너뛰어지고, ② `saveRunResult`를 await하지 않아 비동기 함수라면 그 실패가 묵살되며, ③ 시뮬레이션 경로는 항상 `ok: true`를 반환하는데 `simulated` 플래그가 `execState.results`와 `saveRunResult`에 저장될 때 버려져 실제 실행 없이도 성공으로 기록되고, ④ 실패 통지가 불일치하여 `result.ok`가 undefined처럼 falsy하지만 `false`가 아니면 상태는 'failed'로 표시되면서도 `resolve(result.ok !== false)`는 `true`를 반환해 호출자가 성공으로 오인할 수 있다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "broadcastLocalChange": {
+    "answer": "조용히 실패하는 지점이 있다. 첫째, `ws`가 없거나 `readyState !== 1`(연결 중·닫히는 중·닫힘)이면 로그·재시도·큐잉 없이 그냥 `return`되어 변경 사항이 유실되고 다른 탭은 이를 알 방법이 없다. 둘째, `currentWorkflow()`가 falsy를 반환해도 동일하게 무음으로 종료된다. 셋째, 이 함수는 항상 `undefined`를 반환하므로 호출자는 방송 성공 여부를 구분할 수 없다. 또한 가드를 통과해 `ws.send()`까지 실행되더라도 send는 fire-and-forget이므로, 네트워크가 이미 끊겼지만 close/error 이벤트가 아직 처리되지 않아 `readyState`가 1로 남아 있는 경우 메시지가 서버에 도달하지 못해도 이 함수는 정상 종료한다 — 전송 실패는 이 함수 안에서는 감지되지 않고 함수 밖의 이벤트로만 나중에 드러난다. 즉 \"다른 탭에 변경을 알린다\"는 목적이 달성되지 않는 모든 경로가 조용하다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "patchWSHandler": {
+    "answer": "조용히 실패하는 지점이 여러 곳 있다. 우선 처리 로직 전체를 감싼 `catch (e) {}`가 가장 크다: 잘못된 메시지가 와서 `JSON.parse(ev.data)`가 예외를 던지거나, 그 안의 `refreshAgentStatus()`, `renderAll()`, `toast()` 호출 중 하나라도 실패하면 오류가 로그 없이 그대로 삼켜지고 메시지는 아무 흔적 없이 무시된다(다만 catch 이후 `if (orig) orig(ev)`는 실행되므로 원래 핸들러에는 그대로 전달된다). 그 외에도 `if (!ws) return;`은 ws가 없으면 패치 자체가 아무 표시 없이 생략되고, `agent_report` 계열 메시지에 `agent_id`/`status`가 빠지면 `ag`/`st`가 `''`가 되어 completed/failed 토스트가 뜨지 않고 `document.querySelector('#canvas .node[data-agent=\"\"]')`가 null을 반환해 노드 강조도 조용히 건너뛰며, `wf_state` 메시지는 `msg.id !== store.activeWorkflowId`이거나 `currentWorkflow()`가 falsy를 반환하면 역시 알림 없이 버려진다. 결국 잘못되거나 필드가 누락된 메시지는 대부분 콘솔 오류조차 남기지 않고 사라지므로, 디버깅 시 원인 파악이 어려워질 수 있다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "executeWorkflow_A": {
+    "answer": "조용히 실패할 수 있는 지점이 여러 곳 있다: ① `if (!wf) return;` — currentWorkflow()가 falsy면 토스트·로그 없이 그냥 종료된다. ② visit()의 `if (!n || path.includes(n)) return;` — 엣지가 가리키는 노드가 없거나 이미 방문된 경우 아무 기록 없이 해당 분기 실행이 중단된다. ③ 투표 노드 — Yes/No 라벨 엣지가 없으면 `outs2[0]`으로 조용히 폴백해 의도와 다른 경로로 진행될 수 있고, 나가는 엣지가 아예 없으면 `if (nextEdge)`가 거짓이 되어 상태 표시나 로그 없이 실행이 그냥 끝난다. ④ 리뷰어 노드 — 반려(`!ok`)인데 들어오는 엣지(`prevEdge`)가 없으면 `if (!ok && prevEdge)` 조건이 거짓이 되어 반려가 무시되고 흐름이 그대로 다음으로 진행된다. 또한 try 블록이 열려 있지만 보여준 범위에 catch/finally가 없어서, runVoteNode·runNodeWithRetry 등에서 예외가 발생했을 때 어떻게 처리되는지는 확실하지 않다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 2500,
+    "final": true
+  },
+  "executeWorkflow_B": {
+    "answer": "조용히 실패할 수 있는 지점이 있다. ATF(신뢰 점수 기반 자율성 조정) 블록 전체가 `try { ... } catch (e) {}`의 빈 catch로 감싸져 있어서, `/api/trust` fetch 실패·JSON 파싱 실패 등 어떤 오류가 나도 아무 로그나 상태 표시 없이 조용히 무시되고 실행이 계속된다. 이 경우 신뢰 점수가 낮은 에이전트의 decision 노드에 대한 자동 에스컬레이션(승인 요청)이 사용자 모르게 건너뛰어져, 검증 없이 LLM 판단 단계로 그대로 진행될 수 있다. 반면 `llmDecide`나 `evalCondition` 호출부는 별도 try/catch가 없어 실패 시 바깥 catch로 전파되어 '⛔ 실행 오류'로 표시되므로 조용한 실패는 아니다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 2500,
+    "final": true
+  },
+  "loadTests": {
+    "answer": "이 함수는 모든 실패 경로가 빈 배열 `[]`로 수렴하기 때문에 호출자가 \"테스트가 없음\"과 \"요청 실패\"를 구분할 수 없다는 점이 문제다. 네트워크 오류로 `fetch`가 reject되거나, 응답 본문이 JSON이 아니어서 `r.json()`이 예외를 던지거나, 서버가 `j.success: false`를 반환하는 경우 모두 `[]`가 반환되며, `catch (e)`는 오류 `e`를 로깅 없이 그대로 삼킨다. 또한 `r.ok`를 검사하지 않으므로 404·500 같은 HTTP 오류 상태도 조용히 `[]`가 된다(JSON 오류 응답이면 `success` 부재로, HTML 오류 페이지면 `r.json()` 예외로). 참고로 `currentWorkflow()` 호출은 `try` 밖에 있어 여기서 예외가 발생한다면 삼켜지지 않고 호출자에게 전파된다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "runRegressionGate": {
+    "answer": "조용히 실패하는 지점이 여러 곳 있습니다. 우선 결과 저장용 fetch에 붙은 `.catch(() => {})`는 네트워크 오류를 삼키고, fetch는 HTTP 4xx/5xx에서 reject하지 않으므로 결과 저장이 서버 오류로 실패해도 아무 신호 없이 넘어가며, 최종 toast는 저장이 안 됐어도 \"N/M 통과\"라고 정상 보고합니다. `/api/exec` 호출도 `r.ok`나 상태 코드를 검사하지 않아, 서버가 500 등으로 JSON이 아닌 응답을 주면 `r.json()`이 예외를 던져 catch로 가고, 이때 오류 객체 `e`는 아무 데도 기록되지 않은 채 그저 'fail'로만 처리되어 인프라 장애와 실제 테스트 실패가 구분되지 않습니다. 또한 루프 안의 실행 명령은 `t`와 무관하게 매번 동일하므로, 테스트 케이스별 검증이 이뤄지지 않는데도 겉으로는 전 케이스를 돌린 것처럼 보이는 조용한 의미 왜곡이 있습니다. 마지막으로 맥락 질문과 관련해, 이 함수는 판정 로직 자체가 없습니다. 일부만 실패해도 통과/실패 게이트 결정이나 반환값 없이 toast로 \"통과 개수/전체\"만 표시하고 끝나므로, 일부 실패 시 판정은 \"아무 판정도 내려지지 않음\"입니다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "sendAgentCommand": {
+    "answer": "조용히 실패하는 지점은 두 가지다. 첫째, `if (!agentId) return;`는 agentId가 없으면 toast도 없이 그냥 반환하므로 호출자·사용자 모두 실패를 알 수 없다. 둘째, HTTP 상태 코드를 검사하지 않아(`r.ok` 미확인) 서버가 4xx/5xx를 반환해도 본문이 JSON이면 `j.success`만으로 판단하는데, 이 경우 `toast(j.error || '전송 실패')`로 흘러 사용자에게는 표시되므로 조용한 실패는 아니다. 또한 `j.success`가 true여도 이 코드에서 확인하는 것은 서버의 접수·푸시 여부(`j.pushed`)뿐이며, 에이전트가 실제로 명령을 수신·실행했는지에 대한 도달 확인(ack)은 이 코드에 없다. catch 경로와 `r.json()` 파싱 실패는 toast로 표시되므로 조용한 실패는 아니며, 실패 시 반환되는 null을 호출 측에서 어떻게 처리하는지는 이 코드에 없어 확실하지 않음.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  },
+  "refreshMCPStatus": {
+    "answer": "조용히 실패할 수 있는 지점이 있다. 첫째, `fetch`는 HTTP 오류 상태(4xx·5xx)에서 예외를 던지지 않는데 이 코드는 `r.ok`나 상태 코드를 전혀 검사하지 않으므로, 서버가 오류 응답을 반환해도 그대로 `r.json()`으로 진행한다. 이때 오류 응답 본문이 JSON으로 파싱되고 `online` 필드만 없다면 `(j.online || [])` 폴백 때문에 예외 없이 `on`이 false가 되어, 실제로는 요청이 실패했는데도 \"오프라인\"으로 조용히 표시된다. 둘째, `catch` 블록이 오류 `e`를 어디에도 기록하지 않고 삼키므로 네트워크 실패·JSON 파싱 실패 등 모든 예외가 아무런 흔적 없이 동일한 \"오프라인\" 표시로 수렴하여, 진짜 오프라인인지 요청 실패인지 구분할 수 없다. 또한 `j.online`이 배열이 아닌 truthy 값(예: 문자열)이면 `.includes`가 부분 문자열 일치로 동작해 잘못된 \"온라인\" 판정이 날 수 있으나, 서버가 그런 형태를 반환하는지는 확실하지 않다.",
+    "truncated": false,
+    "model": "moonshotai/kimi-k3",
+    "max_tokens": 1500,
+    "final": true
+  }
+}

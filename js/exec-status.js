@@ -114,7 +114,13 @@ async function executeWorkflow() {
       const ok = Math.random() > 0.15;
       logRun('검토: ' + (n.label || '') + (ok ? ' ✅ 통과' : ' ⛔ 반려'));
       const prevEdge = wf.edges.find(e => e.to === id);
-      if (!ok && prevEdge) { path.pop(); await visit(prevEdge.from); return; }
+      if (!ok) {
+        if (prevEdge) { path.pop(); await visit(prevEdge.from); return; }
+        // 되돌릴 이전 노드가 없으면 반려를 표시하고 흐름 중단 (조용히 진행하지 않음)
+        document.getElementById('rs-status').textContent = '⛔ 반려됨';
+        logRun('반려: ' + (n.label || '') + ' (되돌릴 노드 없음 — 실행 중단)');
+        return;
+      }
     }
     // 승인 게이트 노드 — Strong HITL + 점진적 위임(자동 승인)
     if (n.type === 'approval') {
@@ -137,6 +143,7 @@ async function executeWorkflow() {
     if (n.type === 'decision' && !n.condition && n.llm_prompt) {
       try {
         const tr = await fetch(API_BASE + '/api/trust');
+        if (!tr.ok) throw new Error('HTTP ' + tr.status);
         const tj = await tr.json();
         if (tj.success && n.agentId) {
           const myTrust = (tj.trust || []).find(t => t.agent_id === n.agentId);
@@ -145,7 +152,11 @@ async function executeWorkflow() {
             if (!ok) { document.getElementById('rs-status').textContent = '⛔ 반려됨'; return; }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        // 신뢰 조회 실패 시 에스컬레이션이 스킵됨 — 조용히 넘기지 않고 로그 남김
+        console.warn('ATF 신뢰 조회 실패 (에스컬레이션 스킵):', e.message || e);
+        logRun('⚠ 신뢰 조회 실패 — 자동 에스컬레이션 스킵 (' + (n.label || id) + ')');
+      }
     }
     // decision: 조건식 → LLM 판단 → Yes 우선
     if (n.type === 'decision') {
@@ -230,7 +241,7 @@ function patchWSHandler() {
           toast('🔔 공동 편집 반영');
         }
       }
-    } catch (e) {}
+    } catch (e) { console.warn('[ws] 메시지 처리 실패:', e.message, String(ev.data).slice(0, 120)); }
     if (orig) orig(ev);
   };
 }

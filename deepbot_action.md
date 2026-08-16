@@ -300,3 +300,5 @@ agent.payload.get / report / checkpoint
 | 2026-08-17 | #32 배포 확인 — role=dialog 15개, CACHE v8, css/cred-modal.css, js/esc-panel-close.js 전부 원격 반영 | ✅ |
 | 2026-08-17 | 세션 hang 원인 규명·수정 — 할매봇 로그의 spawnSync ETIMEDOUT 3회(13:44·13:55·14:06)는 queue-trigger.js의 execSync 10분 타임아웃. 배치 A·B·C가 19분 걸려 끊겼고 재시도 정책이 3회 증폭. 실패가 아니라 작업 중이었음. 타임아웃 30분(WF_TRIGGER_TIMEOUT_MS)·잠금회수는 타임아웃+5분으로 연동·ETIMEDOUT 구분 로그. 검사 3건 (12스위트 202건) | ✅ |
 | 2026-08-17 | 지시서#33 작성·전달 — 코드리뷰 2차(네트워크 경계 12개). #30 대체: 워커가 Kimi로 바뀌고 타임아웃 10→30분이라 전제가 달라짐. 12개 함수 실재 재확인(cd73a1e 기준), truncated면 2500 재호출 의무, "최종 판단 불가 0"이 채택률 유효 조건 | 대기 |
+| 2026-08-17 | 🛑 #33 중단 지시 (사용자) — API 비용 급증 확인 중. 워커 호출 중단·기존 결과는 보존·커밋 금지 | 중단 |
+| 2026-08-17 | 비용 원인 조사 — 센터장 세션은 claude_max/20x 구독이나 hasExtraUsageEnabled=true(한도 초과분 추가 과금). 오늘 할매봇 세션 10회·Kimi 워커 58회(Nous 청구, Anthropic 아님). 할매봇 VPS 인증 방식 확인 요청 | 진행 |

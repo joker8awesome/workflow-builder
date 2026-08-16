@@ -284,3 +284,4 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 지시서#28 push 승인 수신·수행 (msg_233 claim, phase2-rename-20260816) — main 최신화(fast-forward c38435f) 후 phase2-1-rename 병합(merge commit a36d1e5, 센터장 커밋 2건이 앞서 있어 --no-ff), npm test 11스위트 178건 통과, git push origin main 성공(c38435f..a36d1e5). ⚠️ send_to_center.py 첫 호출 시 --help 인자를 summary로 넣어 무의미 리포트(msg_234) 발송 — 정정 보고로 상세 요약 재발송. ⚠️ .mcp.json 부재로 agent.tasks.claim MCP 호출 불가 → DB UPDATE 직접 실행(hermes 소유) | ✅ |
 | 2026-08-16 | #28 push 완료 검수 — 16개 파일 의미있는 이름으로 변경(b6d1b7d), CACHE v7, 계약 테스트 9건 전부 통과로 독립 검증 | ✅ |
 | 2026-08-16 | Phase 2-2 완료 — ops/test-frontend-contract.js 등록. 12스위트 187건. 프론트 검사 0 → 9건. 할매봇이 손으로 세던 항목(script 참조·ASSETS 양방향·getElementById 대상)이 영구 검사로 승격 | ✅ |
+| 2026-08-16 | 지시서#29 작성·전달 — 워커 함대 2차 코드리뷰 1차 배치. 120여 함수 중 저장·동기화·실행취소 12개만 선별(조용한 실패 유형에 초점). 산출물은 채택률 숫자 — 나머지 108개 진행 여부 판단 근거. push는 승인 후(지시서에 명시) | 대기 |

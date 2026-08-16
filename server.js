@@ -1742,6 +1742,13 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     // 잘렸다는 사실이 응답에 없어서 받는 쪽은 그게 완성된 답인 줄 알았다.
     // 호출자가 필요한 만큼 올릴 수 있게 하되 상한은 둔다 — 비용이 나가는 경로다.
     const maxTokens = Math.min(Math.max(Number(max_tokens) || 1500, 100), 4000);
+
+    // 어떤 모델이 답했는지 응답에 실는다.
+    // agents 테이블의 이름·역할을 바꿔도 이 라우트가 부르는 모델은 안 바뀐다.
+    // 실제로 ag_deepseek 을 "Kimi 워커"로 고쳐놓고도 라우트는 그대로였고,
+    // 응답에 모델명이 없어서 밖에서는 확인할 방법이 없었다.
+    // 오늘 모델명 오타로 하루 종일 404 가 났던 것도 같은 사각지대였다.
+    const workerModel = process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731';
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
     const nous = getNousAuth();
     if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
@@ -1750,7 +1757,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
       signal: AbortSignal.timeout(60000),   // 응답 없는 호출이 요청을 물고 있지 않도록
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
       body: JSON.stringify({
-        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',
+        model: workerModel,
         messages: [
           { role: 'system', content: system || '당신은 커멘드센터의 Kimi 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
           { role: 'user', content: prompt }
@@ -1777,7 +1784,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
           [agent_id, to, JSON.stringify({ ok: false, error: detail }), trace_id || '']
         );
       }
-      return res.status(502).json({ success: false, error: 'llm_failed', detail, trace_id: trace_id || '' });
+      return res.status(502).json({ success: false, error: 'llm_failed', detail, model: workerModel, trace_id: trace_id || '' });
     }
 
     // 보고 기록.
@@ -1802,7 +1809,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     }
     res.json({
       success: true, agent_id: agent_id || 'ag_deepseek', result: text,
-      truncated, max_tokens: maxTokens, trace_id: trace_id || '',
+      model: workerModel, truncated, max_tokens: maxTokens, trace_id: trace_id || '',
     });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });

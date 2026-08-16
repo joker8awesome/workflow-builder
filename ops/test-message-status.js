@@ -74,6 +74,14 @@ check('절단을 응답에 알린다',
 check('절단 시 ok:false 로 기록',
   /ok: !truncated, truncated/.test(SRV),
   'ok:true 로 남으면 나중에 로그를 봐도 미완성인 줄 모른다');
+// agents 테이블의 이름을 바꿔도 라우트가 부르는 모델은 안 바뀐다.
+// 실제로 ag_deepseek 을 "Kimi 워커"로 고쳐놓고 라우트는 그대로였다.
+check('어떤 모델이 답했는지 응답에 싣는다',
+  /model: workerModel, truncated/.test(SRV),
+  '에이전트 이름만 바꾸고 모델은 그대로여도 밖에서 알 수 없다');
+check('실패 응답에도 모델명을 싣는다',
+  /error: 'llm_failed', detail, model: workerModel/.test(SRV),
+  '모델명이 틀려서 실패했는지 구분해야 한다 — 오늘 그것 때문에 하루를 썼다');
 
 console.log('\n3) 오케스트레이터 어휘는 분리돼 있음을 확인 (의도된 것)');
 const ORCH = fs.existsSync(path.join(ROOT, 'agent_orchestrator.py'))

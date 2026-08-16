@@ -156,7 +156,10 @@ srv.listen(0, '127.0.0.1', async () => {
   // 오래된 잠금은 회수해야 한다 — 죽은 프로세스가 남기면 영영 막힌다
   try { fs.unlinkSync(MARK); } catch (e) {}
   fs.writeFileSync(LOCK, '99999');
-  const old = Date.now() - 20 * 60 * 1000;
+  // 회수 임계는 실행 타임아웃(기본 30분) + 5분이다. 그보다 확실히 오래된 값을 쓴다.
+  // 예전엔 20분으로 박아뒀는데, 타임아웃을 10분→30분으로 늘리자 이 검사가 깨졌다.
+  // 테스트가 제 역할을 한 것이므로 임계를 따라 올린다.
+  const old = Date.now() - 45 * 60 * 1000;
   fs.utimesSync(LOCK, new Date(old), new Date(old));
   TASKS.push({ message_id: 'msg_stale', from_agent: 'x', trace_id: 'ts', payload_ref: '' });
   r = await run({ WF_TRIGGER_CMD: `node -e "require('fs').writeFileSync('${MARK.replace(/\\/g, '\\\\')}','1')"` });
@@ -183,6 +186,20 @@ srv.listen(0, '127.0.0.1', async () => {
   check('세션 중복 기동을 잠금으로 막는다',
     /poll-queue\.lock/.test(PQ) && /process\.kill\(pid, 0\)/.test(PQ),
     '폴링 간격보다 세션이 길면 같은 지시로 두 세션이 붙는다');
+
+  // 10분이었는데 배치 A·B·C 가 19분 걸려 세 번 연속 ETIMEDOUT 으로 끊겼다.
+  // 재시도 정책이 증폭했다 — 죽이고 다시 띄우기를 3회 반복한 뒤 포기.
+  // 실패가 아니라 아직 일하는 중이었다.
+  const QT = fs.readFileSync(path.join(__dirname, 'queue-trigger.js'), 'utf8');
+  check('실행 타임아웃이 바꿀 수 있고 충분하다',
+    /WF_TRIGGER_TIMEOUT_MS \|\| 30 \* 60 \* 1000/.test(QT),
+    '세션이 타임아웃보다 길면 정상 작업이 실패로 기록되고 재시도까지 태운다');
+  check('잠금 회수가 실행 타임아웃보다 늦다',
+    /LOCK_STALE_MS = RUN_TIMEOUT_MS \+/.test(QT),
+    '회수가 더 빠르면 정상 실행 중인 세션의 잠금을 뺏어 두 번째가 붙는다');
+  check('타임아웃을 일반 실패와 구분해 알린다',
+    /ETIMEDOUT/.test(QT) && /아직 일하는 중/.test(QT),
+    '구분이 없으면 느린 작업을 고장으로 오진한다');
 
   console.log('\n9) 이 테스트가 프로덕션 상태를 건드리지 않는가');
   // 할매봇이 지시서 #22 검증 중 발견했다 — 트리거가 도는 중에 npm test 를 돌리면

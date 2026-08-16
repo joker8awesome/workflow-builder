@@ -43,7 +43,15 @@ const STATE = path.join(DIR, '.queue-trigger-seen.json');
 const OUT = path.join(DIR, '.queue-trigger.json');
 
 const LOCK = path.join(DIR, '.queue-trigger.lock');
-const LOCK_STALE_MS = 15 * 60 * 1000;   // 기동 명령 타임아웃(10분)보다 넉넉히
+// 세션 하나가 얼마나 걸릴 수 있는가.
+// 10분이었는데 짧았다 — 지시서 #32(배치 A·B·C)는 워커 호출만 여러 번이라 19분 걸렸고,
+// 13:44·13:55·14:06 세 번 모두 'spawnSync /bin/sh ETIMEDOUT' 으로 끊겼다.
+// 재시도 정책이 그걸 증폭했다: 죽이고, 다시 띄우고, 또 죽이기를 3회 반복한 뒤 포기.
+// 실패가 아니라 **아직 일하는 중**이었다.
+const RUN_TIMEOUT_MS = Number(process.env.WF_TRIGGER_TIMEOUT_MS || 30 * 60 * 1000);
+// 잠금 회수는 반드시 실행 타임아웃보다 늦어야 한다.
+// 짧으면 정상 실행 중인 세션의 잠금을 뺏어 두 번째가 붙는다.
+const LOCK_STALE_MS = RUN_TIMEOUT_MS + 5 * 60 * 1000;
 
 function log(...a) { console.log(`[${new Date().toISOString()}]`, ...a); }
 
@@ -168,12 +176,18 @@ async function listPending() {
 
   log(`기동: ${CMD}`);
   try {
-    const out = execSync(CMD, { cwd: ROOT, encoding: 'utf8', timeout: 10 * 60 * 1000, stdio: 'pipe' });
+    const out = execSync(CMD, { cwd: ROOT, encoding: 'utf8', timeout: RUN_TIMEOUT_MS, stdio: 'pipe' });
     if (out) log(out.trim().slice(0, 2000));
     for (const t of fresh) st.seen.add(t.message_id);
     saveState(st);
     log('기동 완료');
   } catch (e) {
+    const timedOut = e.code === 'ETIMEDOUT' || /ETIMEDOUT/.test(e.message || '');
+    if (timedOut) {
+      console.error(`[trigger] 기동이 ${Math.round(RUN_TIMEOUT_MS / 60000)}분을 넘겨 끊겼다 — ` +
+        '실패가 아니라 아직 일하는 중이었을 수 있다. ' +
+        'WF_TRIGGER_TIMEOUT_MS 로 늘릴 수 있다.');
+    }
     console.error('[trigger] 기동 실패:', e.message);
     if (e.stdout) console.error(String(e.stdout).slice(0, 1000));
     if (e.stderr) console.error(String(e.stderr).slice(0, 1000));

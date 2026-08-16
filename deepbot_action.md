@@ -292,3 +292,5 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 웹 UX 진단 실측 — Esc로 닫히는 패널 0/15(핸들러 2개는 무관), 포커스 코드 5줄·role=dialog 1개, css/mobile.css는 실제로 자격증명 모달 전용(이름 오류), 인라인 style 126곳, 하드코딩 색 46종, 미디어쿼리 2개 | ✅ |
 | 2026-08-16 | 워커 운용 지침서 작성 — 2026-08-16-web-ux-directive.md. 배치 A(Esc)·B(포커스)·C(css 개명) 우선, 토큰화는 명시적 보류. 게이트 ⑥ 신설: ARIA·포커스 제안은 속성이 붙는 요소를 확인(앵커는 형식만 본다) | ✅ |
 | 2026-08-16 | 지시서#32 작성·전달 — 배치 A·B·C. A·B는 같은 패널 15개라 직렬, C는 독립. push는 승인 후 | 대기 |
+| 2026-08-16 | #32 배치 A·B·C 배포 승인 — Esc 위임 리스너 1개(js/esc-panel-close.js), role=dialog+aria-modal 각 15개, mobile.css→cred-modal.css, npm test 196건. push 전 CACHE v8 확인과 세션 hang 원인 규명을 조건으로 걸었다 | 대기 |
+| 2026-08-16 | 보고 누락 발견 — 배치 C가 CSS 파일명을 바꿨는데 CACHE 버전 보고가 없음. 계약 테스트는 ASSETS 양방향만 보고 CACHE 버전은 안 잡는다(기존 사용자만 깨지는 유형) | 확인요청 |

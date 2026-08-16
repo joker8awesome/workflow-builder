@@ -33,6 +33,7 @@ const SUITES = [
   { name: '스케줄러 큐 필터 (scheduler-queue)', file: 'ops/test-scheduler-queue.py', runner: 'python', expect: 12 },
   { name: '큐 트리거 (queue-trigger)', file: 'ops/test-queue-trigger.js', runner: 'node', expect: 28 },
   { name: '메시지 상태 어휘 (message-status)', file: 'ops/test-message-status.js', runner: 'node', expect: 11 },
+  { name: '프론트엔드 계약 (frontend-contract)', file: 'ops/test-frontend-contract.js', runner: 'node', expect: 9 },
 ];
 
 function findPython() {

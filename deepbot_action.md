@@ -232,6 +232,7 @@ agent.payload.get / report / checkpoint
 | 2026-08-15 | 지시서#19: 자동 픽업 배포 — npm test 157건, Hermes cron 등록(시스템 cron 데몬 없음), wrapper 경로 수정, hermes -z 실동작 확인(자동 #17 수행, claim 3건, 커밋 58aaa25) | ✅ |
 | 2026-08-16 | 지시서#21: 자동 픽업 정지 진단 — STEP1 확인(스텁은 pull로 복구됨, 무한루프 없음), 복구(166건), 웹훅 재등록(message 추가) | ✅ |
 | 2026-08-16 | 지시서#25: 딥시크 워커 복구 — 모델명 -latest→-0731 되돌림, probe 정상 응답, 178건 통과 | ✅ |
+| 2026-08-16 | 지시서#24: index.html 분해 완료 — css 2파일+js 16파일, index 1011줄, sw.js v6, 회귀 6/6 PASS, 커밋 830e8fb | ✅ |
 | 2026-08-16 | 지시서#20: 양방향 봇 — hermes -z 자동 수행, 웹훅 message 허용, msg_176 claim, 사용자 봇 테스트 대기 | ✅ |
 | 2026-08-15 | 지시서#6: LLM 워커 무인증 차단(P0) — npm test 8스위트 119건 통과, 401/400 확인, limit 적용 | ✅ |
 | 2026-08-15 | 지시서#17: 자동 픽업 검증 — 사람 개입 없이 지시 수신·수행 (ops/.queue-trigger.json 읽고 git pull 후 지시서 수행) | ✅ 완료 |

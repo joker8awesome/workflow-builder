@@ -131,20 +131,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// 간단한 인증 — 환경변수 WF_ACCESS_TOKEN 설정 시 편집 API에 토큰 요구
-const ACCESS_TOKEN = process.env.WF_ACCESS_TOKEN || null;
-function requireAuth(req, res, next) {
-  if (!ACCESS_TOKEN) return next(); // 미설정 시 인증 없음 (로컬)
-  const auth = req.headers.authorization || '';
-  if (auth === 'Bearer ' + ACCESS_TOKEN) return next();
-  return res.status(401).json({ success: false, error: 'unauthorized' });
-}
 // 편집(mutation) API에만 인증 적용
-app.post('/api/workflows', requireAuth);
-app.put('/api/workflows/:id', requireAuth);
-app.delete('/api/workflows/:id', requireAuth);
-app.post('/api/workflows/:id/versions', requireAuth);
-app.post('/api/workflows/:id/logs', requireAuth);
+app.post('/api/workflows',              maybeAuth('mcp:execute'));
+app.put('/api/workflows/:id',           maybeAuth('mcp:execute'));
+app.delete('/api/workflows/:id',        maybeAuth('mcp:execute'));
+app.post('/api/workflows/:id/versions', maybeAuth('mcp:execute'));
+app.post('/api/workflows/:id/logs',     maybeAuth('mcp:execute'));
 
 // 목록
 app.get('/api/workflows', async (req, res) => {
@@ -558,7 +550,7 @@ Context: ${JSON.stringify(context || {})}`;
 
 // === 웹훅 트리거 — 외부 이벤트로 워크플로우 실행 ===
 const webhookTokens = new Map(); // token -> { wfId, nodeId }
-app.post('/api/webhook/register', requireAuth, async (req, res) => {
+app.post('/api/webhook/register', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { wf_id, node_id } = req.body || {};
     if (!wf_id) return res.status(400).json({ success: false, error: 'wf_id required' });
@@ -625,7 +617,7 @@ app.get('/api/workflows/:id/comments', async (req, res) => {
     res.json({ success: true, comments: rows });
   } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
-app.post('/api/workflows/:id/comments', requireAuth, async (req, res) => {
+app.post('/api/workflows/:id/comments', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { node_id, author, text } = req.body || {};
     if (!text) return res.status(400).json({ success: false, error: 'text required' });
@@ -702,7 +694,7 @@ app.get('/api/agents', async (req, res) => {
     res.json({ success: true, agents: rows });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/agents', requireAuth, async (req, res) => {
+app.post('/api/agents', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { id, name, person, role, machine, color, owner } = req.body || {};
     if (!id) return res.status(400).json({ success: false, error: 'id required' });
@@ -721,7 +713,7 @@ app.post('/api/agents', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.delete('/api/agents/:id', requireAuth, async (req, res) => {
+app.delete('/api/agents/:id', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     await pool.query('DELETE FROM agents WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -796,7 +788,7 @@ app.post('/api/agents/:id/wake', requireScope(pool, 'mcp:execute', { allowAccess
 });
 
 // 승인 결정 기록 — 텔레그램 버튼/웹 UI 양쪽에서 쓴다
-app.post('/api/approvals/:id/decide', requireAuth, async (req, res) => {
+app.post('/api/approvals/:id/decide', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { decision, approver } = req.body || {};
     if (!['approved', 'rejected'].includes(decision)) {
@@ -1270,7 +1262,7 @@ app.get('/api/credentials', async (req, res) => {
     res.json({ success: true, credentials: creds });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/credentials', requireAuth, async (req, res) => {
+app.post('/api/credentials', requireScope(pool, 'mcp:admin', { allowAccessToken: true }), async (req, res) => {
   try {
     const { agent_id, scopes } = req.body || {};
     if (!agent_id) return res.status(400).json({ success: false, error: 'agent_id required' });
@@ -1309,7 +1301,7 @@ app.get('/api/templates', async (req, res) => {
     res.json({ success: true, templates: rows });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/templates', requireAuth, async (req, res) => {
+app.post('/api/templates', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { id, name, description, category, tags, data } = req.body || {};
     if (!id || !name) return res.status(400).json({ success: false, error: 'id/name required' });
@@ -1411,7 +1403,7 @@ app.get('/api/tests', async (req, res) => {
     res.json({ success: true, tests: rows });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.post('/api/tests', requireAuth, async (req, res) => {
+app.post('/api/tests', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { wf_id, name, input, expected } = req.body || {};
     if (!wf_id || !name) return res.status(400).json({ success: false, error: 'wf_id/name required' });
@@ -1423,7 +1415,7 @@ app.post('/api/tests', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 // 회귀 게이트 — 테스트 실행 후 결과 기록
-app.post('/api/tests/:id/result', requireAuth, async (req, res) => {
+app.post('/api/tests/:id/result', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { status } = req.body || {};
     await pool.query(
@@ -1433,7 +1425,7 @@ app.post('/api/tests/:id/result', requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
-app.delete('/api/tests/:id', requireAuth, async (req, res) => {
+app.delete('/api/tests/:id', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     await pool.query('DELETE FROM wf_tests WHERE id = $1', [req.params.id]);
     res.json({ success: true });
@@ -1441,7 +1433,7 @@ app.delete('/api/tests/:id', requireAuth, async (req, res) => {
 });
 
 // === 워크플로우 스케줄/트리거 API ===
-app.post('/api/workflows/:id/schedule', requireAuth, async (req, res) => {
+app.post('/api/workflows/:id/schedule', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { cron, trigger_type } = req.body || {};
     await pool.query('UPDATE wf_workflows SET schedule = $1, trigger_type = $2 WHERE id = $3',
@@ -1478,7 +1470,7 @@ app.post('/api/workflows/:id/run', maybeAuth('mcp:execute'), async (req, res) =>
 });
 
 // === 워크플로우 실행 REST API — 외부에서 실행 (헤드리스) ===
-app.post('/api/workflows/:id/execute', requireAuth, async (req, res) => {
+app.post('/api/workflows/:id/execute', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT id, name, data FROM wf_workflows WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, error: 'not found' });
@@ -1522,7 +1514,7 @@ app.post('/api/workflows/:id/execute', requireAuth, async (req, res) => {
 });
 
 // === 체크포인트 재개 API — 중단된 실행 이어서 ===
-app.post('/api/workflows/:id/resume', requireAuth, async (req, res) => {
+app.post('/api/workflows/:id/resume', maybeAuth('mcp:execute'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       'SELECT * FROM agent_checkpoints WHERE wf_id = $1 AND status = $2 ORDER BY id DESC LIMIT 1',

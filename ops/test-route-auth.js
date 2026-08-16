@@ -43,9 +43,9 @@ for (const m of SRC.matchAll(/app\.(post|put|delete|patch)\(\s*'([^']+)'\s*,([^\
     conditional: /maybeAuth|approvalsAuth/.test(rest),   // 환경변수 플래그로만 적용
   });
 }
-// 별도 줄로 거는 형태: app.post('/x', requireAuth);
+// 별도 줄로 거는 형태: app.post('/x', requireAuth);  또는  app.post('/x', maybeAuth('mcp:execute'));
 const preGuarded = new Set(
-  [...SRC.matchAll(/app\.(?:post|put|delete|patch)\('([^']+)',\s*requireAuth\);/g)].map(m => m[1])
+  [...SRC.matchAll(/app\.(?:post|put|delete|patch)\('([^']+)',\s*(?:requireAuth|maybeAuth)\(/g)].map(m => m[1])
 );
 
 const unguarded = routes.filter(r => !r.guarded && !r.conditional && !preGuarded.has(r.path));
@@ -82,6 +82,31 @@ console.log(`         · WF_APPROVALS_AUTH=1   : ${byApprovals.length}개  ${byA
 console.log('         플래그가 꺼져 있는 동안은 여전히 무인증이다 — 배포만으로는 닫히지 않는다.');
 check('/api/approvals 가 조건부 보호에 포함', byApprovals.includes('/api/approvals'),
   '승인 요청은 사용자 휴대폰으로 알림을 보낸다. 무방비면 알림 폭탄이 가능하다');
+
+console.log('\n5) #37 지시서 정적 검사 — requireAuth 잔존·교체·/api/credentials admin');
+check('server.js 에 requireAuth 가 0회', !/requireAuth/.test(SRC),
+  'requireAuth 가 아직 남아 있다. 17곳 maybeAuth + 1곳 requireScope 교체 후 함수 정의를 지울 것');
+
+const EXPECTED_MAYBE = [
+  '/api/workflows', '/api/workflows/:id', '/api/workflows/:id/versions',
+  '/api/workflows/:id/logs', '/api/workflows/:id/comments',
+  '/api/workflows/:id/schedule', '/api/workflows/:id/execute', '/api/workflows/:id/resume',
+  '/api/webhook/register', '/api/agents', '/api/agents/:id',
+  '/api/approvals/:id/decide', '/api/templates',
+  '/api/tests', '/api/tests/:id/result', '/api/tests/:id',
+];
+for (const p of EXPECTED_MAYBE) {
+  const r = routes.find(x => x.path === p);
+  check(`${p} → maybeAuth(또는 requireScope)`, r ? (r.conditional || r.guarded) : false,
+    'maybeAuth(mcp:execute) 로 교체되지 않았다');
+}
+
+// /api/credentials 는 무조건 mcp:admin 이어야 한다 (maybeAuth 아님)
+const credsRoute = routes.find(x => x.path === '/api/credentials');
+check('/api/credentials → requireScope(mcp:admin)', credsRoute && /requireScope/.test(SRC.match(new RegExp(`app\\.post\\('/api/credentials',[^\\n]*`))?.[0] || ''),
+  '/api/credentials 가 maybeAuth 로 열려 있다 — execute 키로 admin 키 발급 가능');
+check('/api/credentials 가 maybeAuth 가 아님', credsRoute && !credsRoute.conditional,
+  '/api/credentials 에 maybeAuth 가 붙어 있다');
 
 console.log('\n' + (fails.length ? `실패 ${fails.length}건` : '전부 통과'));
 const warned = Object.entries(ALLOWED_PUBLIC).filter(([, v]) => v.startsWith('⚠'));

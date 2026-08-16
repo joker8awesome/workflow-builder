@@ -1,0 +1,47 @@
+[1] push
+- 577b8a9 브랜치 : (없음, reflog만) → origin/review33-a  성공
+- 7c9fc33 브랜치 : (없음, reflog만) → origin/review33-b  성공
+  참고: 두 커밋 모두 어떤 브랜치에도 속하지 않음(git branch --contains 빈 결과).
+  reflog에만 기록됨. SHA 직접 지정으로 push 처리. --force 미사용.
+
+[2] 부모
+- 577b8a9^   : db21112 docs: 지시서 #33 — 코드 리뷰 2차 (#30 대체)
+- 7c9fc33^   : 577b8a9 fix: 지시서 #33 리뷰 2차 — reviewer 반려 무시 + ATF 에스컬레이션 무음 스킵 수정
+- merge-base : 577b8a91e004dfbba0232465c8e88abd1c5fc4c2
+  해석: 7c9fc33가 577b8a9 위에 쌓인 연쇄(parent-child) 구조.
+  나란히 놓고 볼 수 없는 관계가 아니라, 7c9fc33가 577b8a9를 포함함.
+  두 커밋 시간차 6초(16:00:36 → 16:00:42).
+
+[3] 세션 2개
+- msg_297 기동 [trigger] 시작 줄 : 2개
+  · 15:43:19.439Z — spawnSync /bin/sh ETIMEDOUT으로 즉시 실패
+  · 15:54:19.552Z — 성공 (16:05:09.389Z "기동 완료", 약 11분 실행)
+- 두 번째 기동 시 첫 세션 생존 : 로그에 없음
+  (첫 기동은 execSync ETIMEDOUT을 즉시 던졌으나, 실제 spawn된 /bin/sh -c hermes -z
+   자식 프로세스가 부모 trigger 종료 후에도 살아있었는지는 로그에 기록 없음.
+   단, 두 번째 기동(15:54)의 완료 로그(16:05)에 "커밋 2건(7c9fc33, 577b8a9)"이
+   명시돼 있어, 최소한 이 세션이 두 커밋을 모두 만든 것은 확실.
+   msg_316(16:04:25, 채택5)과 msg_317(16:04:33, 채택6)이 8초 차이로 같은 세션에서
+   연속 발신된 점으로 보아, 실제로는 1개 세션이 2번 커밋·2번 보고한 것으로 보임.)
+- 잠금 파일 상태 : 15:43:19Z ETIMEDOUT 시점에 process.on('exit')으로 즉시 해제됨
+  (코드 확인: queue-trigger.js:132 — 어떤 종료든 releaseLock 호출).
+  15:44~15:53 사이 cron "trigger 시작" 라인이 없는 것은 잠금 때문이 아님
+  (잠금은 이미 해제됨). 이 공백의 원인은 로그에 기록 없음 — wf-queue-trigger가
+  */5로 변경되기 전 1분 주기일 때 cron 자체가 안 돈 것으로 보이나,
+  원인은 로그에 없음. (msg_319에서 "wf-queue-trigger 일시 중단"이 언급되나,
+  그 시점은 16:17 보고 시점이고 15:44~15:53과의 연관은 불명.)
+
+[4] claim 순서
+- 세션2 claim 호출 시점 : 작업 후
+  (msg_316에서 "msg_297 claim 시도 시 claimed_by:ag_other(이미 선점됨)"이라고
+   보고한 시점이 16:04:25 — 13개 함수 리뷰 + 커밋 2건 + npm test 완료 후.
+   msg_317에서 "msg_297 claim 완료"라고 한 시점이 16:04:33 — 역시 작업 완료 후.)
+- 그 순서를 만든 곳 : 트리거 프롬프트
+  "끝나면 agent.tasks.claim 으로 해당 message_id 를 claim 하고" 라는 문구가
+  작업 완료 후 claim을 유도. WF_TRIGGER_CMD 환경 변수에 박혀 있음.
+  또한 msg_316에서 "claimed_by:ag_other"라고 한 것은, 자기가 이미 claim한 걸
+  다시 claim하려다 실패한 것으로 보임(MCP 서버가 이미 claimed 상태를
+  ag_other로 표기하는지, 아니면 첫 번째 claim이 다른 세션에서 온 것인지는
+  서버 로그 없이 불명).
+
+[결과] 완료

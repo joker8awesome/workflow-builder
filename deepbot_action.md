@@ -252,3 +252,6 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 지시서#23 작성·전달 — 테스트 격리 배포 + VPS 키 파일 점검 | 대기 |
 | 2026-08-16 | 환경 메모: Git Bash에서 curl -d 로 한글 전송 시 깨짐 → 파일+--data-binary 사용 (텔레그램 알림 깨짐으로 발견) | 확인 |
 | 2026-08-16 | 지시서#23 수행 (자동 픽업) — git pull(fb2a6b9), npm test 11스위트 173건 통과, seen 파일 test 전후 동일(`{"seen":["msg_178"],"tries":{"msg_180":1}}`) 확인, 추적 키·*.txt 없음, pm2 restart 불필요 | ✅ 완료 |
+| 2026-08-16 | 워커 함대 계획 수립 — 전제 검증(딥시크 max_tokens 800·파일 접근 없음 → 코딩 워커 아님, 검토 워커), index.html 5589줄 단일 파일이라 분해 전 병렬 불가. 2026-08-16-worker-fleet-plan.md | ✅ |
+| 2026-08-16 | Phase 0-1: /api/llm/worker 보고 경로 수정 — to_agent가 'ag_orch' 고정 + status='sent'라 워커 결과가 큐에서 증발. report_to 지정 가능·기본은 호출자·status pending. 검사 2건 (175건) e005626 | ✅ |
+| 2026-08-16 | 지시서#24 작성·전달 — Phase 0: 배포 + index.html 분해(관문). 워커 호출은 아직 금지 | 대기 |

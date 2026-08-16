@@ -1,0 +1,46 @@
+.cred-modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+  .cred-modal[hidden] { display: none; }
+  .cred-modal__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+  .cred-modal__panel {
+    position: relative; background: #1a1a1a; color: #eee;
+    border: 1px solid #333; border-radius: 12px;
+    width: min(560px, 92vw); max-height: 90vh; overflow: auto;
+    padding: 0;
+  }
+  .cred-modal__header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid #2a2a2a;
+  }
+  .cred-modal__header h2 { margin: 0; font-size: 18px; font-weight: 500; }
+  .cred-modal__close { background: none; border: 0; color: #888; font-size: 20px; cursor: pointer; }
+  .cred-modal__body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .cred-hint { color: #aaa; margin: 0; font-size: 13px; }
+  .cred-hint code { background: #222; padding: 2px 6px; border-radius: 4px; }
+  .cred-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+  .cred-field > span, .cred-field > legend { color: #ccc; }
+  .cred-field input[type="text"], .cred-field input[type="number"] {
+    background: #0f0f0f; border: 1px solid #333; color: #eee;
+    padding: 8px 10px; border-radius: 6px; font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+  .cred-field label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .cred-modal__actions { display: flex; gap: 8px; justify-content: flex-end; padding-top: 8px; }
+  .btn-primary, .btn-secondary {
+    padding: 8px 16px; border-radius: 6px; border: 1px solid #333;
+    cursor: pointer; font-size: 13px;
+  }
+  .btn-primary { background: #00ff87; color: #000; border-color: #00ff87; font-weight: 500; }
+  .btn-secondary { background: transparent; color: #ccc; }
+  .cred-warning {
+    background: #3a2a00; border: 1px solid #664400; color: #ffd58a;
+    padding: 12px; border-radius: 8px; font-size: 13px;
+  }
+  .cred-key-row { display: flex; gap: 8px; }
+  .cred-key-row input {
+    flex: 1; background: #0f0f0f; border: 1px solid #333; color: #00ff87;
+    padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px;
+  }
+  .cred-key-row button { padding: 0 14px; background: #222; color: #eee; border: 1px solid #333; border-radius: 6px; cursor: pointer; }
+  .cred-config { background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px 12px; }
+  .cred-config summary { cursor: pointer; color: #aaa; font-size: 13px; }
+  .cred-config pre { margin: 10px 0; padding: 10px; background: #000; border-radius: 4px; overflow-x: auto; font-size: 11px; color: #ddd; }

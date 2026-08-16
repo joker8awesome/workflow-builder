@@ -915,17 +915,34 @@ async function handleUserMessage(msg) {
     return send(notify.esc('큐\n\n' + body));
   }
 
-  // --- 응답 붙여넣기 노이즈 필터 ---
+  // --- 응답 붙여넣기 노이즈 필터 (강화판) ---
   // 서버 응답(할매봇 보고)을 텔레그램에서 그대로 복붙하면 지시로 오인돼 큐에 쌓인다.
-  // 첫 줄이 응답 마커로 시작하거나 다중 특징을 가지면 큐 적재를 건너뛴다.
-  // 정확한 지시는 대체로 자연 문장으로 시작하고 이런 마커/이모지 조합을 앞에 두지 않는다.
+  // (a) 첫 줄이 응답 마커로 시작하거나 (b) 본문 전체에 마커/특징이 다수 등장하면 skip.
+  //     (a)만으로는 msg_257 처럼 "짧은 지시 + 뒤에 응답 전문" 케이스를 놓친다.
   const firstLine = text.split('\n')[0].trim();
   const RESPONSE_MARKERS = /^(✅|❌|⏳|📋|📥|📤|📊|🎉|🔴|🟠|🟡|🟢|🔔|🔒|⚠️|💡|📄|🤖|👑|🚀|#{1,3}\s|\|\s|=+\s)/u;
-  const looksLikeReport = RESPONSE_MARKERS.test(firstLine)
+  const MARKER_ANY = /(✅|❌|⏳|📋|📥|📤|📊|🎉|🔴|🟠|🟡|🟢|🔔|🔒|⚠️|💡|📄|🤖|👑|🚀)/gu;
+  const HEADER_ANY = /(^|\n)(#{1,3}\s|\|\s|={3,}|━{3,})/g;
+  const REPORT_TERMS = /(pending\s*\d+건|claimed|completed\s*\||msg[_ ]?\d{2,}|커밋\s+push|npm\s+test|정리\s+결과|필터\s+규칙|판정\s+결과|반영\s*\n|시스템\s+상태|처리\s+결과)/gi;
+
+  const markerCount = (text.match(MARKER_ANY) || []).length;
+  const headerCount = (text.match(HEADER_ANY) || []).length;
+  const termCount = (text.match(REPORT_TERMS) || []).length;
+  const lineCount = text.split('\n').length;
+
+  // 판정 규칙:
+  //  1. 첫 줄이 응답 마커로 시작 → skip (기존)
+  //  2. msg_숫자 시작 → skip (기존)
+  //  3. 다행 텍스트(3줄 이상)에서 마커/헤더/보고 용어가 총 3개 이상 → skip (강화)
+  //  4. 마커가 5개 이상이면 짧아도 skip
+  const looksLikeReport =
+    RESPONSE_MARKERS.test(firstLine)
     || /^msg[_ ]?\d{2,}/i.test(firstLine)
-    || /pending.*[0-9]+건|claimed|completed.*\|/i.test(text.slice(0, 200));
+    || (lineCount >= 3 && (markerCount + headerCount + termCount) >= 3)
+    || markerCount >= 5;
+
   if (looksLikeReport) {
-    console.log(`[tg] 응답 붙여넣기로 판정 — 큐 적재 건너뜀 (${who}): ${firstLine.slice(0, 60)}`);
+    console.log(`[tg] 응답 붙여넣기로 판정 — 큐 적재 건너뜀 (${who}) | markers=${markerCount} headers=${headerCount} terms=${termCount} lines=${lineCount} | first="${firstLine.slice(0, 60)}"`);
     return send(notify.esc('응답 붙여넣기로 판정돼 큐에 넣지 않았습니다.\n지시는 자연 문장으로 보내주세요 (예: "워크플로우 A 배포").'));
   }
 

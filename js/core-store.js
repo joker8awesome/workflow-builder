@@ -138,10 +138,14 @@ async function loadFromServer() {
         }
       }
     }
-    if (loaded.length > 0) {
+    // 부분 로드로 기존 로컬 데이터를 조용히 덮어쓰지 않는다 — 전부 유효할 때만 교체
+    if (loaded.length > 0 && loaded.length === list.length) {
       store.workflows = loaded;
       store.activeWorkflowId = loaded[0].id;
       return true;
+    }
+    if (loaded.length > 0) {
+      console.warn('server load partial:', loaded.length + '/' + list.length + ' 유효 — 로컬 데이터 유지');
     }
   } catch (e) { console.warn('server load failed', e); }
   return false;
@@ -523,11 +527,18 @@ function removeNode(id) {
 async function loadTplFromServer(wfId) {
   try {
     const r = await fetch(API_BASE + '/api/workflows');
+    if (!r.ok) { toast('템플릿 로드 실패 (서버 오류 ' + r.status + ')'); return; }
     const j = await r.json();
     const wf = (j.workflows || []).find(w => w.id === wfId);
     if (!wf) { toast('템플릿 로드 실패'); return; }
-    const detail = await fetch(API_BASE + '/api/workflows/' + wfId).then(r => r.json());
-    const data = detail.workflow && detail.workflow.data ? (typeof detail.workflow.data === 'string' ? JSON.parse(detail.workflow.data) : detail.workflow.data) : { nodes: [], edges: [] };
+    const dr = await fetch(API_BASE + '/api/workflows/' + wfId);
+    if (!dr.ok) { toast('템플릿 로드 실패 (서버 오류 ' + dr.status + ')'); return; }
+    const detail = await dr.json();
+    // 내용이 없는 응답을 성공으로 포장하지 않는다 — 빈 템플릿 설치 방지
+    const raw = detail.workflow && detail.workflow.data;
+    if (!raw) { toast('템플릿 로드 실패 (내용 없음)'); return; }
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!Array.isArray(data.nodes) || data.nodes.length === 0) { toast('템플릿 로드 실패 (노드 없음)'); return; }
     const id = wfId + '_' + Date.now().toString(36);
     const copy = { id, name: wf.name, nodes: (data.nodes || []).map(n => ({ ...n })), edges: (data.edges || []).map(e => ({ ...e })) };
     store.workflows.push(copy);

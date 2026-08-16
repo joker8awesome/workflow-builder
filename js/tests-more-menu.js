@@ -502,10 +502,18 @@ async function refreshMCPStatus() {
   if (!el) return;
   try {
     const r = await fetch(API_BASE + '/api/agents/status');
+    if (!r.ok) {
+      // 서버 오류와 진짜 오프라인을 구분한다 — 4xx/5xx를 오프라인으로 오표시하지 않는다
+      el.innerHTML = '<span style="color:var(--yellow,#e6a23c)">△ 상태 오류 (' + r.status + ')</span>';
+      return;
+    }
     const j = await r.json();
     const on = (j.online || []).includes(MCP_AGENT);
     el.innerHTML = on ? '<span style="color:var(--accent)">● 온라인</span>' : '<span style="color:var(--red)">○ 오프라인</span>';
-  } catch (e) { el.innerHTML = '<span style="color:var(--red)">○ 오프라인</span>'; }
+  } catch (e) {
+    console.warn('[mcp] 상태 조회 실패:', e.message);
+    el.innerHTML = '<span style="color:var(--red)">○ 오프라인</span>';
+  }
 }
 // === 에이전트 팀 대시보드 ===
 async function loadTeamStatus() {

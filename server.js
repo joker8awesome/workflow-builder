@@ -541,7 +541,7 @@ Context: ${JSON.stringify(context || {})}`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + auth.token },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-0731',
+        model: 'deepseek/deepseek-v4-flash-latest',
         messages: [{ role: 'system', content: sys }],
         temperature: 0.1, max_tokens: 100,
       }),
@@ -1319,7 +1319,7 @@ app.post('/api/ai/decide', maybeAuth('mcp:execute'), async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.access_token },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-0731',
+        model: 'deepseek/deepseek-v4-flash-latest',
         messages: [
           { role: 'system', content: 'Answer ONLY with YES or NO followed by a confidence score 0-100. Format: YES 85' },
           { role: 'user', content: String(prompt) },
@@ -1652,8 +1652,8 @@ app.post('/api/connector', maybeAuth('mcp:execute'), async (req, res) => {
 // === 다중 모델 라우팅 — 모델별 가격/품질 테이블 ===
 const MODEL_ROUTES = {
   'auto':    { desc: '자동', providers: ['nous'] },
-  'cheap':   { desc: '저비용', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 50 },
-  'smart':   { desc: '고성능', model: 'deepseek/deepseek-v4-flash-0731', max_tokens: 200 },
+  'cheap':   { desc: '저비용', model: 'deepseek/deepseek-v4-flash-latest', max_tokens: 50 },
+  'smart':   { desc: '고성능', model: 'deepseek/deepseek-v4-flash-latest', max_tokens: 200 },
 };
 app.get('/api/model-routes', (req, res) => res.json({ success: true, routes: MODEL_ROUTES }));
 
@@ -1690,7 +1690,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
       signal: AbortSignal.timeout(60000),   // 응답 없는 호출이 요청을 물고 있지 않도록
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
       body: JSON.stringify({
-        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',
+        model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-latest',
         messages: [
           { role: 'system', content: system || '당신은 커멘드센터의 딥시크 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
           { role: 'user', content: prompt }
@@ -1754,7 +1754,7 @@ ${WF_SCHEMA_EXAMPLE}`;
         'Authorization': 'Bearer ' + auth.token,
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-0731',
+        model: 'deepseek/deepseek-v4-flash-latest',
         messages: [
           { role: 'system', content: sysPrompt },
           { role: 'user', content: prompt },

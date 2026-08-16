@@ -1,9 +1,9 @@
-// Service Worker — PWA 오프라인 캐시 (v7: js/ 파일 이름 정리 — Phase 2-1 지시서 #28)
-const CACHE = 'wf-builder-v7'; // v6~v3 이력: 캐시 무효화·더보기 메뉴 캐시 문제·sync-status 이동
+// Service Worker — PWA 오프라인 캐시 (v8: mobile.css → cred-modal.css 이름 정리 — 지시서 #32 배치 C)
+const CACHE = 'wf-builder-v8'; // v7: js/ 파일 이름 정리, v6~v3: 캐시 무효화·더보기 메뉴 캐시 문제·sync-status 이동
 const ASSETS = [
   './index.html',
   './css/main.css',
-  './css/mobile.css',
+  './css/cred-modal.css',
   './js/core-store.js',
   './js/canvas-render.js',
   './js/undo-run-engine.js',
@@ -20,6 +20,8 @@ const ASSETS = [
   './js/templates-market.js',
   './js/activity-feed.js',
   './js/tests-more-menu.js',
+  './js/esc-panel-close.js',
+  './js/panel-focus.js',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

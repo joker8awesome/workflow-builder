@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>커멘드센터</title>
 <link rel="stylesheet" href="css/main.css">
-<link rel="stylesheet" href="css/mobile.css">
+<link rel="stylesheet" href="css/cred-modal.css">
 /* ═══ 최신 CSS 리빌드 — 디자인 토큰 + 현대 색상 공간 ═══ */
 @layer reset, tokens, layout, components, utilities;
 
@@ -726,9 +726,9 @@
     </div>
   </div>
   <!-- 실행 트레이스 패널 -->
-  <div id="trace-panel" style="display:none;position:fixed;top:60px;left:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="trace-panel" role="dialog" aria-modal="true" aria-labelledby="trace-panel-title" style="display:none;position:fixed;top:60px;left:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h4 style="color:var(--accent);font-size:14px">실행 트레이스</h4>
+      <h4 id="trace-panel-title" style="color:var(--accent);font-size:14px">실행 트레이스</h4>
       <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="트레이스 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -740,27 +740,27 @@
     <div id="trace-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
   </div>
   <!-- 에이전트 레지스트리 패널 -->
-  <div id="agents-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="agents-panel" role="dialog" aria-modal="true" aria-labelledby="agents-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">🤖 에이전트 레지스트리</h4>
+      <h4 id="agents-panel-title" style="color:var(--accent);font-size:15px">🤖 에이전트 레지스트리</h4>
       <button id="agents-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="에이전트 목록 닫기">✕</button>
     </div>
     <button id="agent-add" class="tb-action" style="width:100%;margin-bottom:12px">+ 에이전트 등록</button>
     <div id="agents-list" style="font-size:13px;color:var(--panel-text)"></div>
   </div>
   <!-- 에이전트 대시보드 패널 -->
-  <div id="agent-dash" style="display:none;position:fixed;top:60px;right:16px;z-index:71;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="agent-dash" role="dialog" aria-modal="true" aria-labelledby="agent-dash-title" style="display:none;position:fixed;top:60px;right:16px;z-index:71;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">📊 에이전트 대시보드</h4>
+      <h4 id="agent-dash-title" style="color:var(--accent);font-size:15px">📊 에이전트 대시보드</h4>
       <button id="agent-dash-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="에이전트 대시보드 닫기">✕</button>
     </div>
     <div id="agent-dash-body" style="font-size:13px;color:var(--panel-text)"></div>
     <button id="agent-knowledge-btn" class="tb-action" style="width:100%;margin-top:10px">🧠 지식 기록</button>
   </div>
   <!-- 에이전트 세션/메시지 모니터링 패널 -->
-  <div id="session-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:72;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="session-panel" role="dialog" aria-modal="true" aria-labelledby="session-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:72;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">🔁 에이전트 세션/메시지</h4>
+      <h4 id="session-panel-title" style="color:var(--accent);font-size:15px">🔁 에이전트 세션/메시지</h4>
       <div style="display:flex;gap:6px">
         <button id="session-run" class="tb-action" style="padding:3px 8px;font-size:11px">▶ 실행</button>
         <button id="session-refresh" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="세션 새로고침">⟳</button>
@@ -770,18 +770,18 @@
     <div id="session-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <!-- 템플릿 마켓 패널 -->
-  <div id="market-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:73;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="market-panel" role="dialog" aria-modal="true" aria-labelledby="market-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:73;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:420px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">🛒 워크플로우 템플릿 마켓</h4>
+      <h4 id="market-panel-title" style="color:var(--accent);font-size:15px">🛒 워크플로우 템플릿 마켓</h4>
       <button id="market-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="마켓 닫기">✕</button>
     </div>
     <button id="tpl-publish" class="tb-action" style="width:100%;margin-bottom:10px">+ 현재 워크플로우 템플릿 게시</button>
     <div id="market-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <!-- 에이전트 활동 피드 패널 -->
-  <div id="feed-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:74;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="feed-panel" role="dialog" aria-modal="true" aria-labelledby="feed-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:74;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">📡 에이전트 활동 피드</h4>
+      <h4 id="feed-panel-title" style="color:var(--accent);font-size:15px">📡 에이전트 활동 피드</h4>
       <div style="display:flex;gap:6px">
         <select id="feed-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
           <option value="">전체</option><option value="run">실행</option><option value="approve">승인</option><option value="fail">실패</option>
@@ -792,9 +792,9 @@
     <div id="feed-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <!-- 워크플로우 테스트 스위트 패널 -->
-  <div id="test-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:75;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="test-panel" role="dialog" aria-modal="true" aria-labelledby="test-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:75;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:440px;max-height:75vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">🧪 워크플로우 테스트/회귀 게이트</h4>
+      <h4 id="test-panel-title" style="color:var(--accent);font-size:15px">🧪 워크플로우 테스트/회귀 게이트</h4>
       <button id="test-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="테스트 패널 닫기">✕</button>
     </div>
     <button id="test-add" class="tb-action" style="width:100%;margin-bottom:8px">+ 테스트 케이스 추가</button>
@@ -802,17 +802,17 @@
     <div id="test-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <!-- 거버넌스 대시보드 패널 -->
-  <div id="gov-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:76;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="gov-panel" role="dialog" aria-modal="true" aria-labelledby="gov-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:76;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:380px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">🛡️ 거버넌스</h4>
+      <h4 id="gov-panel-title" style="color:var(--accent);font-size:15px">🛡️ 거버넌스</h4>
       <button id="gov-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="거버넌스 닫기">✕</button>
     </div>
     <div id="gov-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <!-- 연결 기록 패널 -->
-  <div id="edge-log-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:77;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:320px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="edge-log-panel" role="dialog" aria-modal="true" aria-labelledby="edge-log-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:77;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:320px;max-height:60vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h4 style="color:var(--accent);font-size:14px">🔗 연결 기록</h4>
+      <h4 id="edge-log-panel-title" style="color:var(--accent);font-size:14px">🔗 연결 기록</h4>
       <button id="edgelog-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="엣지 로그 닫기">✕</button>
     </div>
     <div id="edge-log-body" style="font-size:12px;color:var(--panel-text)"></div>
@@ -829,7 +829,7 @@
 <!-- ============ HTML: 모달 마크업 ============ -->
 <div id="credentialModal" class="cred-modal" hidden>
   <div class="cred-modal__backdrop" onclick="closeCredentialModal()"></div>
-  <div class="cred-modal__panel" role="dialog" aria-labelledby="credModalTitle">
+  <div class="cred-modal__panel" role="dialog" aria-modal="true" aria-labelledby="credModalTitle">
     <header class="cred-modal__header">
       <h2 id="credModalTitle">🔑 자격증명 발급</h2>
       <button type="button" id="cred-modal-close" class="cred-modal__close" onclick="closeCredentialModal()" aria-label="자격증명 모달 닫기">✕</button>
@@ -901,9 +901,9 @@
 <!-- ============ JavaScript ============ -->
 
   <!-- MCP 지시 패널 -->
-  <div id="mcp-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:78;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="mcp-panel" role="dialog" aria-modal="true" aria-labelledby="mcp-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:78;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h4 style="color:var(--accent);font-size:14px">🤖 MCP 지시 <span id="mcp-status" style="font-size:11px;color:var(--panel-text-faint)"></span></h4>
+      <h4 id="mcp-panel-title" style="color:var(--accent);font-size:14px">🤖 MCP 지시 <span id="mcp-status" style="font-size:11px;color:var(--panel-text-faint)"></span></h4>
       <button id="mcp-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="MCP 패널 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
@@ -917,9 +917,9 @@
     <div id="mcp-log" style="font-size:11px;color:var(--panel-text);margin-top:4px"></div>
   </div>
   <!-- 에이전트 팀 대시보드 -->
-  <div id="team-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:79;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:520px;max-height:78vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="team-panel" role="dialog" aria-modal="true" aria-labelledby="team-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:79;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:520px;max-height:78vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:14px" id="team-title">🤝 에이전트 팀</h4>
+      <h4 id="team-panel-title" style="color:var(--accent);font-size:14px" id="team-title">🤝 에이전트 팀</h4>
       <button id="team-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="팀 현황 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -929,8 +929,8 @@
     <div id="team-list" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
   <div id="toast-container"></div>
-  <div id="ai-panel" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
-    <h4 style="color:var(--accent);margin-bottom:12px">✨ AI 워크플로우 생성</h4>
+  <div id="ai-panel" role="dialog" aria-modal="true" aria-labelledby="ai-panel-title" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+    <h4 id="ai-panel-title" style="color:var(--accent);margin-bottom:12px">✨ AI 워크플로우 생성</h4>
     <textarea id="ai-prompt" placeholder="예: 콘텐츠 승인 프로세스. 브리프 → 리서치 → 초안 → 검수 → 배포" style="width:100%;height:80px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:10px;font-size:13px;font-family:inherit"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button id="ai-generate" class="tb-action">생성</button>
@@ -941,16 +941,16 @@
     <span id="rs-status">준비</span>
     <span id="rs-time">0s</span>
   </div>
-  <div id="stats-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:360px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="stats-panel" role="dialog" aria-modal="true" aria-labelledby="stats-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:360px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h4 style="color:var(--accent);font-size:15px">📊 실행 통계</h4>
+      <h4 id="stats-panel-title" style="color:var(--accent);font-size:15px">📊 실행 통계</h4>
       <button id="stats-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="통계 닫기">✕</button>
     </div>
     <div id="stats-body" style="font-size:13px;color:var(--panel-text)"></div>
   </div>
-  <div id="runlog-panel" style="display:none;position:fixed;bottom:16px;left:16px;z-index:45;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:12px 16px;width:340px;max-height:200px;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
+  <div id="runlog-panel" role="dialog" aria-modal="true" aria-labelledby="runlog-panel-title" style="display:none;position:fixed;bottom:16px;left:16px;z-index:45;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:12px;padding:12px 16px;width:340px;max-height:200px;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <strong style="color:var(--accent);font-size:13px">실행 로그</strong>
+      <strong id="runlog-panel-title" style="color:var(--accent);font-size:13px">실행 로그</strong>
       <button id="runlog-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="실행 로그 닫기">✕</button>
     </div>
     <div id="runlog-body" style="font-size:12px;color:var(--panel-text-dim)"></div>
@@ -1007,5 +1007,7 @@
 <script src="js/templates-market.js"></script>
 <script src="js/activity-feed.js"></script>
 <script src="js/tests-more-menu.js"></script>
+<script src="js/esc-panel-close.js"></script>
+<script src="js/panel-focus.js"></script>
 </body>
 </html>

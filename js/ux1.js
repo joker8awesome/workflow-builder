@@ -174,7 +174,7 @@ function startRun() {
   const wf = currentWorkflow();
   if (!wf) return;
   const start = wf.nodes.find(n => n.type === 'start');
-  if (!start) { toast('시작 노드가 없습니다'); return; }
+  if (!start) { toast('시작 노드가 없어 실행할 수 없습니다. start 노드를 추가한 뒤 다시 시도하세요'); return; }
   runState = { wfId: wf.id, currentId: start.id, visited: new Set() };
   renderRunPanel(); renderCanvas();
   document.getElementById('run-overlay').style.display = 'flex';

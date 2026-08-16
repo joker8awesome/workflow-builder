@@ -41,7 +41,7 @@ function panelErrorHtml(what) {
     ? (what || '이 기능') + '은(는) 서버가 필요합니다.<br><span style="font-size:11px">현재 정적 배포 — 로컬 저장 모드로 동작 중</span>'
     : wfAuthFailed
       ? '인증이 필요합니다. 우측 상단 상태 표시를 눌러 API 키를 입력하세요.'
-      : (what || '데이터') + '을(를) 불러오지 못했습니다.<br><span style="font-size:11px">서버 응답 오류 — 잠시 후 다시 시도하세요</span>';
+      : (what || '데이터') + '을(를) 불러오지 못했습니다: 서버 응답 오류.<br><span style="font-size:11px">잠시 후 다시 시도하세요</span>';
   return '<span style="color:var(--panel-text-faint);line-height:1.6">' + msg + '</span>';
 }
 

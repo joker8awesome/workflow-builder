@@ -33,7 +33,7 @@ function setupCanvasDrop() {
 }
 function addNodeAt(type, x, y) {
   const wf = currentWorkflow();
-  if (!wf) return;
+  if (!wf || !NODE_TYPES[type]) return;
   const id = 'n_' + Date.now().toString(36);
   wf.nodes.push({ id, type, x, y, label: NODE_TYPES[type].label, desc: '', assignee: '', due: '', tags: [], status: '대기' });
   pushHistory();

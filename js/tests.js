@@ -53,7 +53,7 @@ async function runRegressionGate() {
   const wf = currentWorkflow();
   if (!wf) { toast('워크플로우 없음'); return; }
   const tests = await loadTests();
-  if (tests.length === 0) { toast('테스트 케이스가 없습니다'); return; }
+  if (tests.length === 0) { toast('등록된 테스트 케이스가 없습니다. 테스트를 추가한 뒤 다시 실행하세요'); return; }
   toast('회귀 게이트 실행 중...');
   let pass = 0;
   for (const t of tests) {

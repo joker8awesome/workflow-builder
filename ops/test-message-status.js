@@ -67,6 +67,13 @@ check('실패 보고는 ok:false 로 기록',
 check('오류 본문을 결과로 승격하지 않는다',
   !/message\.content\) \|\| JSON\.stringify\(j\)/.test(SRV),
   '|| JSON.stringify(j) 가 있으면 제공자 오류가 그대로 결과가 된다');
+// 잘린 답은 틀린 답보다 위험하다 — 앞부분이 그럴듯해서 완성된 결론으로 읽힌다.
+check('절단을 응답에 알린다',
+  /finish_reason === 'length'/.test(SRV) && /truncated, max_tokens: maxTokens/.test(SRV),
+  '잘렸는지 모르면 받는 쪽이 미완성 답을 결론으로 쓴다');
+check('절단 시 ok:false 로 기록',
+  /ok: !truncated, truncated/.test(SRV),
+  'ok:true 로 남으면 나중에 로그를 봐도 미완성인 줄 모른다');
 
 console.log('\n3) 오케스트레이터 어휘는 분리돼 있음을 확인 (의도된 것)');
 const ORCH = fs.existsSync(path.join(ROOT, 'agent_orchestrator.py'))

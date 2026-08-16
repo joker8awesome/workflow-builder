@@ -1681,7 +1681,11 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     if (!rateLimit('llm:' + (req.agent_id || req.ip || 'anon'), 20)) {
       return res.status(429).json({ success: false, error: 'rate limited', detail: '분당 20회' });
     }
-    const { prompt, agent_id, trace_id, system, report_to } = req.body || {};
+    const { prompt, agent_id, trace_id, system, report_to, max_tokens } = req.body || {};
+    // 800 고정이었다. 코드 리뷰 12건 중 7건이 답을 쓰다 잘렸고,
+    // 잘렸다는 사실이 응답에 없어서 받는 쪽은 그게 완성된 답인 줄 알았다.
+    // 호출자가 필요한 만큼 올릴 수 있게 하되 상한은 둔다 — 비용이 나가는 경로다.
+    const maxTokens = Math.min(Math.max(Number(max_tokens) || 1500, 100), 4000);
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
     const nous = getNousAuth();
     if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
@@ -1695,7 +1699,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
           { role: 'system', content: system || '당신은 커멘드센터의 딥시크 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 800
+        max_tokens: maxTokens
       })
     });
     const j = await r.json();
@@ -1725,15 +1729,25 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     // 지시한 쪽과 받는 쪽이 다르고, list_pending 은 'pending' 만 조회하므로
     // 워커 결과가 큐에서 아무에게도 보이지 않았다. (POST /api/messages 와 같은 사고)
     // 기본 수신자는 이 호출을 한 에이전트다. 시킨 사람이 결과를 받는 게 맞다.
+    // 답을 쓰다 잘렸는지 알린다.
+    // 잘린 답은 틀린 답보다 위험하다 — 문장이 중간에 끊겼을 뿐 앞부분은 그럴듯해서
+    // 받는 쪽이 완성된 결론으로 읽는다. 실제로 리뷰 12건 중 7건이 이렇게 잘렸는데
+    // 응답만 봐서는 알 수 없었다.
+    const truncated = j.choices && j.choices[0] && j.choices[0].finish_reason === 'length';
+    if (truncated) console.warn(`[llm] 응답이 max_tokens(${maxTokens})에서 잘렸다 — trace=${trace_id || '-'}`);
+
     if (agent_id) {
       const to = report_to || req.agent_id || 'ag_orch';
       await pool.query(
         `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
          VALUES ('report', $1, $2, $3, 'pending', $4)`,
-        [agent_id, to, JSON.stringify({ result: text, ok: true }), trace_id || '']
+        [agent_id, to, JSON.stringify({ result: text, ok: !truncated, truncated }), trace_id || '']
       );
     }
-    res.json({ success: true, agent_id: agent_id || 'ag_deepseek', result: text, trace_id: trace_id || '' });
+    res.json({
+      success: true, agent_id: agent_id || 'ag_deepseek', result: text,
+      truncated, max_tokens: maxTokens, trace_id: trace_id || '',
+    });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 

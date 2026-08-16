@@ -1670,8 +1670,8 @@ app.post('/api/feedback', maybeAuth('mcp:execute'), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
-// === 딥시크 LLM 워커 — ag_deepseek 에이전트 실행 ===
-// 규칙: 명령 수신 → deepseek-v4-flash 호출 → 결과 report (trace_id 유지)
+// === Kimi LLM 워커 — ag_deepseek 에이전트 실행 (기본: moonshotai/kimi-k3) ===
+// 규칙: 명령 수신 → LLM 호출(WF_LLM_WORKER_MODEL) → 결과 report (trace_id 유지)
 // 인증 필수 — 이 라우트는 외부 LLM 을 호출해 실제 비용을 발생시킨다.
 // 무인증이면 URL 을 아는 누구나 사용자의 크레딧으로 LLM 을 쓸 수 있고,
 // system 프롬프트까지 지정할 수 있어 사실상 공개 LLM 프록시가 된다.
@@ -1696,7 +1696,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
       body: JSON.stringify({
         model: process.env.WF_LLM_WORKER_MODEL || 'deepseek/deepseek-v4-flash-0731',
         messages: [
-          { role: 'system', content: system || '당신은 커멘드센터의 딥시크 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
+          { role: 'system', content: system || '당신은 커멘드센터의 Kimi 워커입니다. 요청을 분석·요약·리뷰하고 간결한 한국어로 답하세요. trace_id가 있으면 보고에 포함하세요.' },
           { role: 'user', content: prompt }
         ],
         max_tokens: maxTokens

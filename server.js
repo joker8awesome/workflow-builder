@@ -915,6 +915,20 @@ async function handleUserMessage(msg) {
     return send(notify.esc('큐\n\n' + body));
   }
 
+  // --- 응답 붙여넣기 노이즈 필터 ---
+  // 서버 응답(할매봇 보고)을 텔레그램에서 그대로 복붙하면 지시로 오인돼 큐에 쌓인다.
+  // 첫 줄이 응답 마커로 시작하거나 다중 특징을 가지면 큐 적재를 건너뛴다.
+  // 정확한 지시는 대체로 자연 문장으로 시작하고 이런 마커/이모지 조합을 앞에 두지 않는다.
+  const firstLine = text.split('\n')[0].trim();
+  const RESPONSE_MARKERS = /^(✅|❌|⏳|📋|📥|📤|📊|🎉|🔴|🟠|🟡|🟢|🔔|🔒|⚠️|💡|📄|🤖|👑|🚀|#{1,3}\s|\|\s|=+\s)/u;
+  const looksLikeReport = RESPONSE_MARKERS.test(firstLine)
+    || /^msg[_ ]?\d{2,}/i.test(firstLine)
+    || /pending.*[0-9]+건|claimed|completed.*\|/i.test(text.slice(0, 200));
+  if (looksLikeReport) {
+    console.log(`[tg] 응답 붙여넣기로 판정 — 큐 적재 건너뜀 (${who}): ${firstLine.slice(0, 60)}`);
+    return send(notify.esc('응답 붙여넣기로 판정돼 큐에 넣지 않았습니다.\n지시는 자연 문장으로 보내주세요 (예: "워크플로우 A 배포").'));
+  }
+
   // --- 그 밖의 문장: 센터장 앞으로 큐에 넣는다 ---
   //
   // 다만 아무 문장이나 넣지는 않는다. 사용자가 봇 응답을 그대로 복사해 다시

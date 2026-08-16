@@ -256,6 +256,7 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 지시서#23 수행 (자동 픽업) — git pull(fb2a6b9), npm test 11스위트 173건 통과, seen 파일 test 전후 동일(`{"seen":["msg_178"],"tries":{"msg_180":1}}`) 확인, 추적 키·*.txt 없음, pm2 restart 불필요 | ✅ 완료 |
 | 2026-08-16 | 워커 함대 계획 수립 — 전제 검증(딥시크 max_tokens 800·파일 접근 없음 → 코딩 워커 아님, 검토 워커), index.html 5589줄 단일 파일이라 분해 전 병렬 불가. 2026-08-16-worker-fleet-plan.md | ✅ |
 | 2026-08-16 | Phase 0-1: /api/llm/worker 보고 경로 수정 — to_agent가 'ag_orch' 고정 + status='sent'라 워커 결과가 큐에서 증발. report_to 지정 가능·기본은 호출자·status pending. 검사 2건 (175건) e005626 | ✅ |
+| 2026-08-16 | 지시서#26 Phase1 워커 함대 A/B/C 병렬 완료 — index.html(sidebar-toggle aria-label), coreb.js(addNodeAt 타입가드), corea.js/tests.js/ux1.js(오류문구 3건). ag_deepseek 워커 호출 A1/B5(재시도포함)/C1, 반려 0, 지어낸 것 없음. fonts/ 미참조 재확인. npm test 178/178. commit f357c2f push. msg_212 claim, msg_227 보고 | ✅ |
 | 2026-08-16 | 지시서#24 작성·전달 — Phase 0: 배포 + index.html 분해(관문). 워커 호출은 아직 금지 | 대기 |
 | 2026-08-16 | 딥시크 워커 능력 측정 시도 → 전 호출 404 발견. 모델명 2a4aece(-latest)가 제공자 카탈로그에 없음. msg_157(08-15 13:40 정상출력) vs msg_183~191(전부 404)로 회귀 확정 | 발견 |
 | 2026-08-16 | 워커 실패 은폐 수정 — `|| JSON.stringify(j)`로 404 본문이 결과가 되고 success:true·ok:true로 기록되던 것을 502+success:false·ok:false로. 모델명 6곳 -0731 복원. 검사 3건 (178건) ecb6b08 | ✅ |

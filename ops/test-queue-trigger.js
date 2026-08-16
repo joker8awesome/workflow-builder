@@ -168,7 +168,23 @@ srv.listen(0, '127.0.0.1', async () => {
   // 실제로 있었던 사고다. 스케줄러가 저장소 밖 경로를 요구해서 리다이렉트 스텁을 만들었는데,
   // 그걸 ops/queue-trigger.sh 자리에 커밋해버려 스크립트가 자기 자신을 exec 하게 됐다.
   // 문법 오류가 아니라 조용히 도는 무한 루프라, 큐만 안 비워지고 아무 신호도 없다.
-  console.log('\n8) 이 테스트가 프로덕션 상태를 건드리지 않는가');
+  console.log('\n8) poll-queue 가 세션을 실제로 띄우는가');
+  // --run 은 선언만 있고 실행이 없었다. execFile 로 예약해놓고 바로 다음 줄에서
+  // process.exit(0) 을 불러, 자식이 뜨기 전에 부모가 죽었다. 로그도 버퍼째 버려져
+  // "실행했다"는 줄조차 안 남았다 — 사용자가 텔레그램으로 보낸 지시가 15분마다
+  // 감지만 되고 방치됐다 (msg_287 이 두 회차 연속 대기 상태로 남았다).
+  const PQ = fs.readFileSync(path.join(__dirname, 'poll-queue.js'), 'utf8');
+  check('spawn 뒤 close 를 기다린다',
+    /child\.on\('close'/.test(PQ),
+    'Windows 에서 detached 로 떼면 cmd.exe 손자가 부모와 함께 죽는다 — 실측했다');
+  check('spawn 직후 process.exit 로 죽이지 않는다',
+    !/spawn\([\s\S]{0,600}?\n\s*process\.exit\(/.test(PQ),
+    '자식이 뜨기 전에 부모가 죽으면 세션은 한 번도 실행되지 않는다');
+  check('세션 중복 기동을 잠금으로 막는다',
+    /poll-queue\.lock/.test(PQ) && /process\.kill\(pid, 0\)/.test(PQ),
+    '폴링 간격보다 세션이 길면 같은 지시로 두 세션이 붙는다');
+
+  console.log('\n9) 이 테스트가 프로덕션 상태를 건드리지 않는가');
   // 할매봇이 지시서 #22 검증 중 발견했다 — 트리거가 도는 중에 npm test 를 돌리면
   // 잠금을 뺏고 seen 을 지운다. 그러면 아직 pending 인 지시가 다시 기동된다.
   check('테스트 상태 파일이 저장소 밖에 있다',

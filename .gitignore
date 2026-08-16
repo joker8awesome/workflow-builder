@@ -21,3 +21,5 @@ ops/inbox.md
 wf_user_key.txt
 *_key.txt
 *.key
+ops/.poll-queue.lock
+ops/session.log

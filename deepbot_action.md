@@ -255,3 +255,6 @@ agent.payload.get / report / checkpoint
 | 2026-08-16 | 워커 함대 계획 수립 — 전제 검증(딥시크 max_tokens 800·파일 접근 없음 → 코딩 워커 아님, 검토 워커), index.html 5589줄 단일 파일이라 분해 전 병렬 불가. 2026-08-16-worker-fleet-plan.md | ✅ |
 | 2026-08-16 | Phase 0-1: /api/llm/worker 보고 경로 수정 — to_agent가 'ag_orch' 고정 + status='sent'라 워커 결과가 큐에서 증발. report_to 지정 가능·기본은 호출자·status pending. 검사 2건 (175건) e005626 | ✅ |
 | 2026-08-16 | 지시서#24 작성·전달 — Phase 0: 배포 + index.html 분해(관문). 워커 호출은 아직 금지 | 대기 |
+| 2026-08-16 | 딥시크 워커 능력 측정 시도 → 전 호출 404 발견. 모델명 2a4aece(-latest)가 제공자 카탈로그에 없음. msg_157(08-15 13:40 정상출력) vs msg_183~191(전부 404)로 회귀 확정 | 발견 |
+| 2026-08-16 | 워커 실패 은폐 수정 — `|| JSON.stringify(j)`로 404 본문이 결과가 되고 success:true·ok:true로 기록되던 것을 502+success:false·ok:false로. 모델명 6곳 -0731 복원. 검사 3건 (178건) ecb6b08 | ✅ |
+| 2026-08-16 | 지시서#25 작성·전달 — 워커 복구 긴급 배포(#24보다 우선), STEP2 실응답 확인 필수 | 대기 |

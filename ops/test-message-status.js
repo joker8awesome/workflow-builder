@@ -47,6 +47,13 @@ check('POST /api/messages 기본값이 pending',
 check('텔레그램 지시 적재가 pending',
   /'instruction', \$1, 'ag_claude_desktop', \$2, 'pending'/.test(SRV),
   '사용자가 봇에 보낸 지시가 전달되지 않는다');
+// 워커 결과도 같은 경로를 탄다. 여기가 'sent' 면 시킨 사람이 결과를 못 받는다.
+check('LLM 워커 보고가 pending',
+  /VALUES \('report', \$1, \$2, \$3, 'pending', \$4\)/.test(SRV),
+  '워커 결과가 큐에서 아무에게도 보이지 않는다');
+check('LLM 워커 보고 수신자가 고정돼 있지 않다',
+  /report_to \|\| req\.agent_id/.test(SRV),
+  "'ag_orch' 로 박혀 있으면 지시한 쪽과 받는 쪽이 달라진다");
 
 console.log('\n3) 오케스트레이터 어휘는 분리돼 있음을 확인 (의도된 것)');
 const ORCH = fs.existsSync(path.join(ROOT, 'agent_orchestrator.py'))

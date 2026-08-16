@@ -1681,7 +1681,7 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     if (!rateLimit('llm:' + (req.agent_id || req.ip || 'anon'), 20)) {
       return res.status(429).json({ success: false, error: 'rate limited', detail: '분당 20회' });
     }
-    const { prompt, agent_id, trace_id, system } = req.body || {};
+    const { prompt, agent_id, trace_id, system, report_to } = req.body || {};
     if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
     const nous = getNousAuth();
     if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
@@ -1700,12 +1700,17 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     });
     const j = await r.json();
     const text = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || JSON.stringify(j);
-    // 보고 기록
+    // 보고 기록.
+    // 예전엔 받는 쪽이 'ag_orch' 로 박혀 있고 status 가 'sent' 였다. 둘 다 문제였다 —
+    // 지시한 쪽과 받는 쪽이 다르고, list_pending 은 'pending' 만 조회하므로
+    // 워커 결과가 큐에서 아무에게도 보이지 않았다. (POST /api/messages 와 같은 사고)
+    // 기본 수신자는 이 호출을 한 에이전트다. 시킨 사람이 결과를 받는 게 맞다.
     if (agent_id) {
+      const to = report_to || req.agent_id || 'ag_orch';
       await pool.query(
         `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
-         VALUES ('report', $1, 'ag_orch', $2, 'sent', $3)`,
-        [agent_id, JSON.stringify({ result: text, ok: true }), trace_id || '']
+         VALUES ('report', $1, $2, $3, 'pending', $4)`,
+        [agent_id, to, JSON.stringify({ result: text, ok: true }), trace_id || '']
       );
     }
     res.json({ success: true, agent_id: agent_id || 'ag_deepseek', result: text, trace_id: trace_id || '' });

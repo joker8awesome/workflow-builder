@@ -200,6 +200,17 @@ function post(headers, body) {
   check('/지시 로 강제할 수 있다',
     /지시\|task\|cmd/.test(srv),
     '길이 때문에 진짜 지시를 못 보내면 안 된다');
+  // 필터가 /지시 보다 먼저 돌면 탈출구가 무의미해진다. 실제로 그렇게 돼 있었다 —
+  // 필터가 필요한 내용일수록 마커·보고 용어가 많아서, 정작 강제로 보내야 할 지시가 막힌다.
+  const iForce = srv.indexOf('const FORCE = ');
+  const iReport = srv.indexOf('const looksLikeReport');
+  const iPasted = srv.indexOf('const looksPasted');
+  check('/지시 판정이 두 필터보다 먼저 온다',
+    iForce > 0 && iForce < iReport && iForce < iPasted,
+    `순서가 어긋나면 /지시 를 붙여도 필터에 막힌다 (FORCE=${iForce} report=${iReport} pasted=${iPasted})`);
+  check('두 필터 모두 forced 를 존중한다',
+    /looksLikeReport = !forced/.test(srv) && /looksPasted = !forced/.test(srv),
+    '한쪽이라도 forced 를 안 보면 강제 적재가 막힌다');
 
   console.log('\n' + (fails.length ? `실패 ${fails.length}건: ${fails.join(', ')}` : '전부 통과'));
   process.exit(fails.length ? 1 : 0);

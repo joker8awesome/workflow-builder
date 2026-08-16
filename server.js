@@ -915,11 +915,20 @@ async function handleUserMessage(msg) {
     return send(notify.esc('큐\n\n' + body));
   }
 
+  // --- 강제 적재 표시를 먼저 떼어낸다 ---
+  // 이게 맨 앞이어야 한다. 아래 필터들보다 뒤에 두면 /지시 를 붙여도 필터에 걸려
+  // 탈출구가 무의미해진다 — 실제로 그렇게 돼 있었다. 필터가 필요한 내용일수록
+  // 마커·보고 용어가 많아서, 정작 강제로 보내야 할 지시가 막힌다.
+  const FORCE = /^\/(지시|task|cmd)\s+/;
+  const forced = FORCE.test(text);
+  const body = forced ? text.replace(FORCE, '').trim() : text;
+  if (!body) return send(notify.esc('내용이 비어 있습니다. /지시 뒤에 할 일을 적어주세요.'));
+
   // --- 응답 붙여넣기 노이즈 필터 (강화판) ---
   // 서버 응답(할매봇 보고)을 텔레그램에서 그대로 복붙하면 지시로 오인돼 큐에 쌓인다.
   // (a) 첫 줄이 응답 마커로 시작하거나 (b) 본문 전체에 마커/특징이 다수 등장하면 skip.
   //     (a)만으로는 msg_257 처럼 "짧은 지시 + 뒤에 응답 전문" 케이스를 놓친다.
-  const firstLine = text.split('\n')[0].trim();
+  const firstLine = body.split('\n')[0].trim();
   const RESPONSE_MARKERS = /^(✅|❌|⏳|📋|📥|📤|📊|🎉|🔴|🟠|🟡|🟢|🔔|🔒|⚠️|💡|📄|🤖|👑|🚀|#{1,3}\s|\|\s|=+\s)/u;
   const MARKER_ANY = /(✅|❌|⏳|📋|📥|📤|📊|🎉|🔴|🟠|🟡|🟢|🔔|🔒|⚠️|💡|📄|🤖|👑|🚀)/gu;
   const HEADER_ANY = /(^|\n)(#{1,3}\s|\|\s|={3,}|━{3,})/g;
@@ -935,11 +944,11 @@ async function handleUserMessage(msg) {
   //  2. msg_숫자 시작 → skip (기존)
   //  3. 다행 텍스트(3줄 이상)에서 마커/헤더/보고 용어가 총 3개 이상 → skip (강화)
   //  4. 마커가 5개 이상이면 짧아도 skip
-  const looksLikeReport =
+  const looksLikeReport = !forced && (
     RESPONSE_MARKERS.test(firstLine)
     || /^msg[_ ]?\d{2,}/i.test(firstLine)
     || (lineCount >= 3 && (markerCount + headerCount + termCount) >= 3)
-    || markerCount >= 5;
+    || markerCount >= 5);
 
   if (looksLikeReport) {
     console.log(`[tg] 응답 붙여넣기로 판정 — 큐 적재 건너뜀 (${who}) | markers=${markerCount} headers=${headerCount} terms=${termCount} lines=${lineCount} | first="${firstLine.slice(0, 60)}"`);
@@ -955,10 +964,7 @@ async function handleUserMessage(msg) {
   //
   // 길거나 여러 줄인 것은 사람이 손으로 친 지시가 아니라 붙여넣기일 가능성이 높다.
   // 확신할 수 없으므로 막지 않고 **되묻는다** — /지시 를 붙이면 그대로 들어간다.
-  const FORCE = /^\/(지시|task|cmd)\s+/;
-  const forced = FORCE.test(text);
-  const body = forced ? text.replace(FORCE, '').trim() : text;
-  const lines = body.split('\n').length;
+  const lines = lineCount;
   const looksPasted = !forced && (body.length > 400 || lines > 6);
 
   if (looksPasted) {
@@ -968,8 +974,6 @@ async function handleUserMessage(msg) {
       '봇 응답을 다시 붙여넣은 것이라면 그대로 두시면 됩니다.\n' +
       '진짜 지시라면 앞에 /지시 를 붙여 다시 보내주세요.'));
   }
-  if (!body) return send(notify.esc('내용이 비어 있습니다. /지시 뒤에 할 일을 적어주세요.'));
-
   try {
     const { rows } = await pool.query(
       `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)

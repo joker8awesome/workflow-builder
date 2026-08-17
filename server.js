@@ -1382,37 +1382,10 @@ app.get('/api/events', async (req, res) => {
 // 실행 결과 저장 시 실패면 audit에 기록 (기존) + 클라이언트가 WS로 알림
 
 // === 3. 신뢰도/자율성: ai/decide 응답에 confidence 포함 ===
-app.post('/api/ai/decide', maybeAuth('mcp:execute'), async (req, res) => {
-  try {
-    const { prompt, context, model } = req.body || {};
-    if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
-    const auth = getNousAuth();
-    if (!auth) return res.status(503).json({ success: false, error: 'Nous 인증 토큰 없음' });
-    const r = await fetch(auth.inference_base_url + '/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + auth.access_token },
-      body: JSON.stringify({
-        model: 'deepseek/deepseek-v4-flash-0731',
-        messages: [
-          { role: 'system', content: 'Answer ONLY with YES or NO followed by a confidence score 0-100. Format: YES 85' },
-          { role: 'user', content: String(prompt) },
-        ],
-        temperature: 0.2,
-        max_tokens: 100,
-      }),
-    });
-    if (!r.ok) {
-      const errText = await r.text().catch(() => '');
-      return res.status(502).json({ success: false, error: 'LLM API 오류: ' + r.status + ' ' + errText.slice(0, 200) });
-    }
-    const data = await r.json();
-    const content = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
-    const yes = content.includes('YES');
-    const confMatch = content.match(/(\d{1,3})/);
-    const confidence = confMatch ? Math.min(100, Math.max(0, parseInt(confMatch[1]))) : 50;
-    res.json({ success: true, decision: yes, confidence, raw: content });
-  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
-});
+// /api/ai/decide 중복(죽은) 정의 제거됨 — #44 P2-E.
+// Express 는 첫 등록(위 527줄대)만 탄다. 이 아래 정의는 도달 불가였고,
+// 게다가 getNousAuth 가 반환하지 않는 필드(inference_base_url/access_token)를 써서
+// 실행됐어도 깨졌을 코드였다. 유효 정의는 위 하나뿐.
 
 // === 워크플로우 테스트 스위트 API ===
 app.get('/api/tests', async (req, res) => {

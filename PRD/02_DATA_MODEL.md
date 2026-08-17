@@ -1,70 +1,58 @@
-# 02 · 데이터 모델
+# 02 · 데이터 모델 (#45 실측 반영)
 
-> 실측 기준: `ops/schema.sql`(8/15 pg_dump) + Phase 0 재확인. **games·odds_snapshots는 야구 픽 프로젝트 소유 — 읽기 전용.**
-
----
-
-## 1. 확인된 테이블 (읽기 전용)
-
-### `games` — 경기 일정 (fixtures)
-```
-game_id text PK · league text · game_date date · start_time timestamptz
-home_team text · away_team text · created_at timestamptz
-```
-🔴 **결과/스코어 컬럼 없음** (8/15 스냅샷). → 라벨은 여기 없거나, 스키마가 드리프트됐거나, 다른 곳에 있다. **Phase 0에서 확정.**
-
-### `odds_snapshots` — 시간별 배당 스냅샷 (특징의 원천)
-```
-id bigint PK · game_id text FK→games · provider text · bookmaker text
-market text · side text · line numeric(6,2) · price numeric(8,3) · collected_at timestamptz
-idx: (game_id, collected_at), (market, side)
-```
-
-### `latest_odds` — 뷰 (= 마감선 = 기준선의 원천)
-```sql
-SELECT DISTINCT ON (game_id, market, side) game_id, market, side, line, price, collected_at
-FROM odds_snapshots ORDER BY game_id, market, side, collected_at DESC;
-```
-각 (game_id, market, side)의 **마지막** 스냅샷 = 마감배당. **기준선(devig close)은 여기서 나온다.**
+> 🔴 야구 픽 프로젝트의 `games`·`odds_snapshots`는 **비어 있고(0행)** 우리 것이 아니다 → **건드리지 않는다.** 우리는 **별도 `fb_*` 테이블**을 신설해 직접 채운다(사용자 확정, schema.change 승인).
 
 ---
 
-## 2. 🔴 [NEEDS CLARIFICATION] 라벨(정답) 소스 — Phase 0
+## 1. 우리 테이블 (신설, `fb_` 네임스페이스)
 
-예측의 정답 = **경기 실제 결과**(승/패, 스코어, 총득점 등). 후보:
+### `fb_games` — MLB 일정+결과 (라벨)
+```
+game_pk bigint PK        -- MLB Stats API gamePk (native id → 조인키)
+game_date date · start_time timestamptz
+home_team text · away_team text
+home_score int · away_score int · status text   -- 결과(라벨). 종료 후 채움
+```
+소스: **MLB Stats API**(`statsapi.mlb.com`, 무료·키 불필요) `schedule`+`boxscore`.
 
-| 후보 | 확인 방법 (Phase 0) |
+### `fb_odds_snapshots` — 배당 시계열 (특징 원천)
+```
+id bigserial PK · game_pk bigint FK→fb_games
+provider text · bookmaker text · market text · side text
+line numeric · price numeric · collected_at timestamptz    -- 스냅샷 시각
+idx: (game_pk, collected_at)
+```
+소스: **전진 수집**(배당 API를 주기적으로 폴링) + (검토) 과거분 구매.
+🔴 **T-6h 특징을 만들려면 경기당 여러 시점 스냅샷 필수** — 이게 수집 설계의 핵심.
+
+---
+
+## 2. 라벨(정답) 소스 — 확정
+
+**MLB Stats API `boxscore`의 최종 스코어** → `fb_games.home_score/away_score`.
+- moneyline 라벨 y = (home_score > away_score).
+- 무료·전체 히스토리·키 불필요 → **결과는 쉬운 절반.**
+
+## 3. 파생 특징 (T-6h 컷오프, 경기 전 정보만)
+
+| 특징 | 정의 |
 |---|---|
-| (a) 최신 `games`에 결과 컬럼 추가됨 | `\d games` / `SELECT * FROM games LIMIT 5` |
-| (b) `odds_snapshots`에 `result`/`settled` market이 있음 | `SELECT market, side, count(*) FROM odds_snapshots GROUP BY 1,2` |
-| (c) 별도 결과 테이블/DB | `information_schema.tables` / `psql -l` |
+| `devig_T6h` | **T-6h as-of** 배당의 vig 제거 내재확률 |
+| `odds_move_rate` | 개장→T-6h 배당변동율 (사용자 지정 핵심 지표) |
+| `book_disagreement` | T-6h 시점 bookmaker 간 price 분산 |
 
-**라벨 소스가 확정되기 전엔 특징·분할·평가를 코딩하지 않는다.**
-
----
-
-## 3. 파생 특징 (odds_snapshots에서 계산 — 읽기 전용 산출)
-
-해석 가능한 항만 사용한다(공식이 읽혀야 하므로):
-
-| 특징 | 정의 | 왜 |
-|---|---|---|
-| `devig_prob` | 마감 `1/price`를 양측 합=1로 정규화 | 기준선 자체이자 강력한 예측 |
-| `line_move` | 마감선 − 개장선 (`collected_at` 최소→최대) | 시장이 어느 쪽으로 움직였나 |
-| `book_disagreement` | 같은 market의 bookmaker 간 price 분산 | 불확실성 신호 |
-| `open_close_spread` | 개장/마감 내재확률 차 | 정보 유입 |
-| (도메인) 팀 최근폼·홈/원정 | 라벨 소스 확정 후 파생 | 야구/축구 특화 |
-
-> 특징은 **경기 시작 전 시점 정보만** 쓴다. 마감 이후·경기 중 데이터를 특징에 넣으면 미래 누수.
-
----
-
-## 4. 시간 축 (누수 방지의 핵심)
-
-```
-개장선 ────────── 마감선(latest_odds) │ 경기 시작 │ 결과(라벨)
-└──── 특징은 여기까지만 ────────────┘           └ 여기는 채점에만
+🔴 **as-of 쿼리**: T-6h 특징 = `start_time - interval '6 hours'` **이전의 마지막 스냅샷**. (기준선 `latest_odds`는 마감선이라 다르다.)
+```sql
+-- 개념: 각 game의 T-6h 직전 마지막 스냅샷
+SELECT DISTINCT ON (game_pk, market, side) *
+FROM fb_odds_snapshots s JOIN fb_games g USING (game_pk)
+WHERE s.collected_at <= g.start_time - interval '6 hours'
+ORDER BY game_pk, market, side, s.collected_at DESC;
 ```
 
-- 학습/검증/홀드아웃 분할은 **game_date 시간순**. 랜덤 금지.
-- 홀드아웃 = 가장 최근 구간, **딱 한 번** 채점.
+## 4. 시간 축
+```
+개장선 ── (전진수집 스냅샷들) ── T-6h컷 │ 경기시작 │ 마감선(기준선) │ 결과(라벨)
+└──── 특징은 T-6h까지만 ─────────┘                                └ 채점
+```
+학습/검증/홀드아웃 = `game_date` **시간순**. 홀드아웃 최근 구간, 1회.

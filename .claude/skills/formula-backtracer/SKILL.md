@@ -21,20 +21,15 @@ description: 과거 스포츠(야구·축구) 경기결과·배당을 역추적�
 
 ## 실행 단계
 
-### STEP 0 — Phase 0 게이트: 라벨 소스 확인 (BLOCKING)
+### STEP 0 — 데이터 수집 (첫 단계, #45로 확정)
 
-라벨(경기 결과)이 스키마에 안 보인다. **먼저 확인하지 않으면 나머지를 실행하지 마라.**
+야구 픽 `games`·`odds_snapshots`는 **비어 있다.** 역추적할 과거가 아직 없으므로 **수집이 먼저**다. 리그=**MLB**, 테이블=**별도 `fb_*` 신설**(사용자 확정).
 
-읽기 전용 psql(사용자 `!` 실행 또는 할매봇):
-```sql
-SELECT league,count(*),min(game_date),max(game_date) FROM games GROUP BY league ORDER BY 2 DESC;
-SELECT market,side,count(*) FROM odds_snapshots GROUP BY market,side ORDER BY 3 DESC LIMIT 30;
-SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY 1;
-\d games
-```
-- 라벨 소스 확정: (a) games 결과 컬럼 / (b) odds의 result·settled market / (c) 별도 테이블·DB.
-- 리그·경기수·기간, market/side 확정.
-- **라벨을 못 찾으면 여기서 멈추고 사용자에게 보고.** 지어내지 마라. (`references/method.md` §라벨)
+- `fb_games`·`fb_odds_snapshots` 생성 (schema.change **승인**).
+- **일정·결과** = MLB Stats API(무료·키 불필요) → `fb_games`(스코어=라벨).
+- **배당** = 전진 수집기(주기 폴링, **T-6h 근방 스냅샷 확보**) → `fb_odds_snapshots`. (+ 과거분 구매는 케이던스·가격 검증 후, 비용 승인)
+- 데이터가 충분히 쌓이기 전엔 STEP 1~3(백테스트) 불가 — 완료조건은 카운트로.
+- 상세: `PRD/03_PHASES.md` Phase 0.
 
 ### STEP 1 — 기준선 + 백테스트 하네스 (수치: 할매봇/로컬 Claude)
 

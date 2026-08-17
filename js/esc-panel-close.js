@@ -2,11 +2,16 @@
 // 지시서 #32 배치 A — Kimi 워커 초안 + 할매봇 보정
 // 보정: (1) z-index 동률 시 DOM 후순위 우선  (2) 명령 팔레트 열려 있으면 패널 안 닫음
 (function () {
+  // ── canonical PANEL_IDS ─────────────────────────────────────
+  // 이 파일이 panel-focus.js 보다 먼저 로드된다(index.html script 순서).
+  // 그래서 패널 id 목록의 단일 출처를 여기에 두고 전역에 노출한다.
+  // panel-focus.js 는 이 전역을 소비한다 — 목록을 두 곳에 중복 정의하지 않는다.
   var PANEL_IDS = [
     'trace-panel', 'agents-panel', 'agent-dash', 'session-panel', 'market-panel',
     'feed-panel', 'test-panel', 'gov-panel', 'edge-log-panel', 'credentialModal',
     'mcp-panel', 'team-panel', 'ai-panel', 'stats-panel', 'runlog-panel'
   ];
+  window.__CC_PANEL_IDS = PANEL_IDS;
 
   function isOpen(el) {
     if (el.id === 'credentialModal') return el.hidden === false;

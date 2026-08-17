@@ -1854,7 +1854,7 @@ let engineAvailable = null;
 async function checkEngine() {
   if (engineAvailable !== null) return engineAvailable;
   try {
-    await execFileAsync(ENGINE_PYTHON, ['-m', 'engine', '--help'], { timeout: 5000 });
+    await execFileAsync(ENGINE_PYTHON, ['-m', 'engine', '--help'], { cwd: ENGINE_CWD, timeout: 5000 });
     engineAvailable = true;
   } catch (e) { engineAvailable = false; }
   return engineAvailable;

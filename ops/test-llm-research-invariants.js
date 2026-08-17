@@ -56,6 +56,8 @@ check('리다이렉트 매 홉 재검사 (redirect: manual)', /redirect:\s*'manu
   '리다이렉트를 따라가며 재검사하지 않으면 우회된다');
 check('엔진 venv 파이썬 경로 (ENGINE_PYTHON)', /ENGINE_PYTHON/.test(body),
   '시스템 python3(curl_cffi 미설치)로 호출하면 엔진이 조용히 실패한다');
+check('엔진 호출 cwd 지정 (cwd: ENGINE_CWD)', /cwd:\s*ENGINE_CWD/.test(body),
+  'cwd 를 안 주면 -m engine 이 /opt/data/engine 모듈을 못 찾는다(모듈명 함정)');
 check('엔진 curl-only 호출 (--no-playwright)', /--no-playwright/.test(body),
   'node/playwright 폴백이 서버 fetch 경로에서 느린 브라우저를 띄운다');
 check('엔진 JSON 본문 파싱 (j.content)', /j\.content/.test(body),

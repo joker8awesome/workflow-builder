@@ -252,6 +252,11 @@ srv.listen(0, '127.0.0.1', async () => {
   check('collect-mlb 가 fb_games 에만 쓴다',
     /fb_games/.test(MLB) && !/(?:INSERT INTO|UPDATE)\s+(?:games|odds_snapshots)\b/.test(MLB),
     '야구 픽 games/odds_snapshots 는 건드리면 안 된다 (#49)');
+  const SGO = fs.readFileSync(path.join(__dirname, 'collect-odds-sgo.py'), 'utf8');
+  check('collect-odds-sgo 가 fb_odds_snapshots 에만 쓰고 키를 하드코딩하지 않는다',
+    /fb_odds_snapshots/.test(SGO) && !/(?:INSERT INTO|UPDATE)\s+(?:games|odds_snapshots)\b/.test(SGO)
+      && !/x-api-key['"]\s*:\s*['"][A-Za-z0-9]/.test(SGO),
+    '야구 픽 테이블 안 쓰고, 키는 env 에서만 읽는다 (#50)');
 
   cleanup();
   try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {}

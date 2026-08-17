@@ -65,7 +65,7 @@ check('목록이 최신 상태', nowGuarded.length === 0,
   nowGuarded.map(p => `${p}  ← 보호됨. ALLOWED_PUBLIC 에서 제거할 것`).join('\n         '));
 
 console.log('\n3) 비용이 나가는 라우트는 반드시 보호돼야 한다');
-const COSTLY = ['/api/llm/worker'];
+const COSTLY = ['/api/llm/worker', '/api/llm/research'];
 for (const p of COSTLY) {
   const r = routes.find(x => x.path === p);
   check(`${p} 인증됨`, r ? r.guarded : true,

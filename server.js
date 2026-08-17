@@ -59,6 +59,10 @@ app.get('/api/fallback-log', (req, res) => res.json({ success: true, log: fallba
 const notify = require('./notify');
 const { parseJsonbStrict } = require('./jsonb');
 const { requireScope } = require('./auth-credential');
+const { validateWebUrl } = require('./ssrf-guard');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // === 팀 도구 전환 — 변경 API 인증 (단계적 적용) ===
 // 무인증 변경 라우트가 23개 남아 있고, 웹 UI 가 아직 키 없이 호출한다.
@@ -1823,6 +1827,240 @@ app.post('/api/llm/worker', requireScope(pool, 'mcp:execute', { allowAccessToken
     res.json({
       success: true, agent_id: agent_id || 'ag_deepseek', result: text,
       model: workerModel, truncated, max_tokens: maxTokens, trace_id: trace_id || '',
+    });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
+// === 웹 리서치 워커 — tool-loop 엔드포인트 (지시서 #46) ===
+// LLM 이 web_search/web_fetch 를 tool_call 로 호출하며 실제 웹 조회로 리서치한다.
+// 기존 /api/llm/worker 는 건드리지 않는다 — 이 엔드포인트는 신규 추가만.
+//
+// 보안: SSRF 방어(사설망·클라우드 메타데이터 차단, 리다이렉트 매 홉 재검사),
+//       used_sources 감사(출처 없는 합성 답은 반려), 무한루프·폭주 가드레일.
+
+const RESEARCH_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36';
+const FETCH_TEXT_LIMIT = 20000;   // fetch 본문 truncate (20KB)
+const FETCH_COUNT_LIMIT = 8;      // 세션당 fetch 개수 상한
+const RESEARCH_TIMEOUT_MS = 90000; // 총 타임아웃
+
+// 리다이렉트도 매 홉 SSRF 재검사하며 따라간다. 마지막 홉의 { ok, status, text } 또는 { error }.
+async function fetchWithRedirectGuard(url, { timeoutMs = 15000, maxHops = 4 } = {}) {
+  let current = url;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const v = await validateWebUrl(current);
+    if (v.error) return { ok: false, error: v.error };
+    let r;
+    try {
+      r = await fetch(v.url, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(timeoutMs),
+        headers: { 'User-Agent': RESEARCH_UA, 'Accept': 'text/html,application/xhtml+xml,text/plain,*/*' },
+      });
+    } catch (e) {
+      return { ok: false, error: 'fetch 실패: ' + (e.name === 'TimeoutError' ? 'timeout' : e.message) };
+    }
+    if (r.status >= 300 && r.status < 400) {
+      const loc = r.headers.get('location');
+      if (!loc) return { ok: false, error: '리다이렉트지만 Location 없음' };
+      try { current = new URL(loc, v.url).toString(); } catch (e) { return { ok: false, error: '리다이렉트 URL 오류' }; }
+      continue;
+    }
+    const text = await r.text().catch(() => '');
+    return { ok: r.ok, status: r.status, text };
+  }
+  return { ok: false, error: '리다이렉트 상한(' + maxHops + ') 초과' };
+}
+
+// insane-search 엔진 가용 여부 — 매 fetch 마다 spawn 실패를 반복하지 않도록 캐시.
+let engineAvailable = null;
+async function checkEngine() {
+  if (engineAvailable !== null) return engineAvailable;
+  try {
+    await execFileAsync('python3', ['-m', 'engine', '--help'], { timeout: 5000 });
+    engineAvailable = true;
+  } catch (e) { engineAvailable = false; }
+  return engineAvailable;
+}
+
+// web_fetch 백엔드 — 2차(엔진) 우선, 1차(Jina Reader) 폴백. 둘 다 SSRF 검증 후 호출.
+async function webFetchBackend(url) {
+  const v = await validateWebUrl(url);
+  if (v.error) return { ok: false, error: v.error };
+
+  // 2차(강력): insane-search 엔진 — 있으면 우선, 실패 시 Jina 폴백.
+  if (await checkEngine()) {
+    try {
+      const { stdout } = await execFileAsync('python3', ['-m', 'engine', v.url, '--json'],
+        { timeout: 30000, maxBuffer: 20 * 1024 * 1024, encoding: 'utf8' });
+      const text = String(stdout || '').slice(0, FETCH_TEXT_LIMIT);
+      return { ok: true, text, bytes: Buffer.byteLength(text), backend: 'engine' };
+    } catch (e) {
+      console.warn('[research] engine fetch 실패, Jina 폴백:', e.message);
+    }
+  }
+
+  // 1차: Jina Reader (URL → 마크다운, 키 불필요)
+  const r = await fetchWithRedirectGuard('https://r.jina.ai/' + v.url, { timeoutMs: 30000, maxHops: 4 });
+  if (r.error) return { ok: false, error: r.error };
+  if (!r.ok) return { ok: false, error: 'Jina HTTP ' + r.status, status: r.status };
+  const text = (r.text || '').slice(0, FETCH_TEXT_LIMIT);
+  return { ok: true, text, bytes: Buffer.byteLength(text), backend: 'jina' };
+}
+
+// web_search 백엔드 — (b) DuckDuckGo HTML (키 0, 취약하나 동작). 링크·제목 파싱.
+function parseDdgResults(html, max) {
+  const out = [];
+  const re = /class="result__a"[^>]*href="[^"]*uddg=([^"&]+)"[^>]*>([\s\S]*?)<\/a>/g;
+  let m;
+  while ((m = re.exec(html)) && out.length < max) {
+    let url;
+    try { url = decodeURIComponent(m[1]); } catch (e) { url = m[1]; }
+    const title = m[2].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#x27;/g, "'").replace(/&quot;/g, '"').trim();
+    if (url) out.push({ title, url });
+  }
+  return out;
+}
+async function webSearchBackend(query) {
+  const q = String(query || '').trim();
+  if (!q) return { ok: false, error: 'query 없음' };
+  const ddgUrl = 'https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q);
+  const r = await fetchWithRedirectGuard(ddgUrl, { timeoutMs: 20000, maxHops: 4 });
+  if (r.error) return { ok: false, error: r.error };
+  if (!r.ok) return { ok: false, error: 'DDG HTTP ' + r.status, status: r.status };
+  const results = parseDdgResults(r.text, 5);
+  return { ok: true, results, count: results.length };
+}
+
+const RESEARCH_SYSTEM = `당신은 웹 리서치 도우미입니다. 사용자의 질문에 정확히 답하기 위해 도구를 활용하세요.
+- web_search(query): 웹 검색으로 관련 출처(제목+URL)를 찾습니다.
+- web_fetch(url): 특정 URL 의 본문을 가져옵니다.
+
+규칙:
+1. 답은 반드시 실제로 조회한 출처에 근거하세요. 출처 없이 추측하거나 내부 지식만으로 단정하지 마세요.
+2. 중요한 주장에는 출처 URL 을 함께 명시하세요.
+3. 조회 결과가 불충분하면 추가 검색·조회를 이어가세요.
+4. 한국어로 답하세요.`;
+
+const RESEARCH_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: '웹에서 질의를 검색해 관련 출처 목록(제목+URL)을 반환한다.',
+      parameters: { type: 'object', properties: { query: { type: 'string', description: '검색 질의' } }, required: ['query'] },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_fetch',
+      description: '지정한 URL 의 본문(마크다운/텍스트)을 가져온다. http/https 공개 URL 만 허용.',
+      parameters: { type: 'object', properties: { url: { type: 'string', description: '가져올 URL' } }, required: ['url'] },
+    },
+  },
+];
+
+app.post('/api/llm/research', requireScope(pool, 'mcp:execute', { allowAccessToken: true }), async (req, res) => {
+  try {
+    // 인증된 호출자라도 폭주는 막는다 — 외부 LLM + 네트워크 비용이 나가는 경로.
+    if (!rateLimit('research:' + (req.agent_id || req.ip || 'anon'), 10)) {
+      return res.status(429).json({ success: false, error: 'rate limited', detail: '분당 10회' });
+    }
+    const { prompt, model, agent_id, trace_id, report_to, max_iters } = req.body || {};
+    if (!prompt) return res.status(400).json({ success: false, error: 'prompt required' });
+
+    const modelName = model || process.env.WF_LLM_RESEARCH_MODEL || process.env.WF_LLM_WORKER_MODEL || 'moonshotai/kimi-k3';
+    const maxIters = Math.min(Math.max(Number(max_iters) || 5, 1), 10); // 무한루프 방지
+
+    const nous = getNousAuth();
+    if (!nous) return res.status(500).json({ success: false, error: 'Nous auth 없음' });
+
+    const used_sources = [];
+    let fetchCount = 0;
+
+    const messages = [
+      { role: 'system', content: RESEARCH_SYSTEM },
+      { role: 'user', content: prompt },
+    ];
+
+    let finalAnswer = null;
+    let iterations = 0;
+
+    for (let i = 0; i < maxIters; i++) {
+      iterations = i + 1;
+      const r = await fetch(nous.base + '/chat/completions', {
+        method: 'POST',
+        signal: AbortSignal.timeout(RESEARCH_TIMEOUT_MS),
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + nous.token },
+        body: JSON.stringify({ model: modelName, messages, tools: RESEARCH_TOOLS, max_tokens: 3000 }),
+      });
+      if (!r.ok) {
+        const detail = await r.text().catch(() => '').then(t => t.slice(0, 300));
+        console.error(`[research] LLM 호출 실패 (HTTP ${r.status}): ${detail}`);
+        return res.status(502).json({ success: false, error: 'llm_failed', detail, model: modelName, trace_id: trace_id || '' });
+      }
+      const j = await r.json();
+      const msg = j.choices && j.choices[0] && j.choices[0].message;
+      if (!msg) return res.status(502).json({ success: false, error: 'llm_failed', detail: '빈 응답', model: modelName, trace_id: trace_id || '' });
+
+      const toolCalls = msg.tool_calls && msg.tool_calls.length ? msg.tool_calls : null;
+      if (!toolCalls) { finalAnswer = msg.content || ''; break; }
+
+      // tool_calls 실행 → role:'tool' 메시지로 append
+      messages.push({ role: 'assistant', content: msg.content || null, tool_calls: toolCalls });
+      for (const tc of toolCalls) {
+        const fn = tc.function || {};
+        let args = {};
+        try { args = JSON.parse(fn.arguments || '{}'); } catch (e) { args = {}; }
+        let resultText;
+
+        if (fn.name === 'web_fetch') {
+          if (fetchCount >= FETCH_COUNT_LIMIT) {
+            resultText = JSON.stringify({ error: 'fetch 상한 초과(' + FETCH_COUNT_LIMIT + ')' });
+            used_sources.push({ type: 'fetch', url: args.url, ok: false, error: 'limit' });
+          } else {
+            fetchCount++;
+            const out = await webFetchBackend(args.url);
+            used_sources.push({ type: 'fetch', url: args.url, ok: out.ok, bytes: out.bytes, backend: out.backend, error: out.error });
+            resultText = out.ok ? out.text : JSON.stringify({ error: out.error });
+          }
+        } else if (fn.name === 'web_search') {
+          const out = await webSearchBackend(args.query);
+          used_sources.push({ type: 'search', query: args.query, ok: out.ok, count: out.count, error: out.error });
+          resultText = out.ok ? JSON.stringify(out.results) : JSON.stringify({ error: out.error });
+        } else {
+          resultText = JSON.stringify({ error: '알 수 없는 도구: ' + fn.name });
+          used_sources.push({ type: 'unknown', name: fn.name, ok: false, error: 'unknown_tool' });
+        }
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: String(resultText).slice(0, FETCH_TEXT_LIMIT) });
+      }
+    }
+
+    if (finalAnswer === null) finalAnswer = '(max_iters 도달 — 도구 호출이 계속됨)';
+
+    // 감사성 게이트: 출처 없이 합성된 답은 검증 불가 = 실패로 친다.
+    const noSources = used_sources.length === 0;
+    const success = !noSources;
+
+    if (agent_id) {
+      const to = report_to || req.agent_id || 'ag_orch';
+      try {
+        await pool.query(
+          `INSERT INTO agent_messages (msg_type, from_agent, to_agent, payload, status, trace_id)
+           VALUES ('report', $1, $2, $3, 'pending', $4)`,
+          [agent_id, to, JSON.stringify({ result: finalAnswer, used_sources, ok: success }), trace_id || '']
+        );
+      } catch (e) { console.warn('[research] report 기록 실패:', e.message); }
+    }
+
+    res.json({
+      success,
+      error: noSources ? 'no_sources_used (검증 불가 — 출처 없이 합성)' : undefined,
+      result: finalAnswer,
+      used_sources,
+      iterations,
+      model: modelName,
+      trace_id: trace_id || '',
     });
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });

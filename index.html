@@ -11,9 +11,9 @@
   <header id="topbar">
     <button id="sidebar-toggle" aria-label="사이드바 토글">☰</button>
     <strong>커멘드센터</strong>
-    <input id="wf-name" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
+    <input id="wf-name" aria-label="워크플로우 이름" placeholder="워크플로우 이름" style="flex:1;max-width:300px">
     <span id="save-status" style="font-size:12px;color:#888"></span>
-    <input id="wf-search" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:150px">
+    <input id="wf-search" aria-label="워크플로우 검색" placeholder="워크플로우 검색..." style="background:var(--dark-2);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:7px 12px;font-size:13px;width:150px">
     <span class="tb-sep"></span>
     <button id="btn-run" class="tb-action" style="background:var(--accent);color:#04100a;font-weight:700">▶ 실행</button>
     <button id="btn-ai" class="tb-action">✨ AI</button>
@@ -101,7 +101,7 @@
       <button id="trace-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="트레이스 닫기">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
-      <select id="trace-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
+      <select id="trace-filter" aria-label="트레이스 필터" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
         <option value="">전체</option><option value="fail">실패만</option><option value="slow">느린 스팬</option>
       </select>
       <button id="trace-refresh" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="트레이스 새로고침">⟳</button>
@@ -152,7 +152,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h4 id="feed-panel-title" style="color:var(--accent);font-size:15px">📡 에이전트 활동 피드</h4>
       <div style="display:flex;gap:6px">
-        <select id="feed-filter" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
+        <select id="feed-filter" aria-label="피드 필터" style="padding:3px 8px;font-size:11px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:6px;color:var(--panel-text)">
           <option value="">전체</option><option value="run">실행</option><option value="approve">승인</option><option value="fail">실패</option>
         </select>
         <button id="feed-close" class="tb-action" style="padding:3px 8px;font-size:11px" aria-label="피드 닫기">✕</button>
@@ -186,16 +186,7 @@
     </div>
     <div id="edge-log-body" style="font-size:12px;color:var(--panel-text)"></div>
   </div>
-<!--
-  자격증명 발급 UI - 팀 패널에 붙일 스니펫
-  index.html의 팀/에이전트 패널 근처에 이 HTML+CSS+JS를 추가.
-  스타일은 최소한만 인라인으로 넣었으니 기존 디자인 시스템에 맞게 조정.
-
-  사용:
-    openCredentialModal('ag_1')   // 에이전트 ID로 모달 열기
--->
-
-<!-- ============ HTML: 모달 마크업 ============ -->
+<!-- 자격증명 발급 모달 -->
 <div id="credentialModal" class="cred-modal" hidden>
   <div class="cred-modal__backdrop" onclick="closeCredentialModal()"></div>
   <div class="cred-modal__panel" role="dialog" aria-modal="true" aria-labelledby="credModalTitle">
@@ -264,11 +255,6 @@
   </div>
 </div>
 
-<!-- ============ CSS ============ -->
-
-
-<!-- ============ JavaScript ============ -->
-
   <!-- MCP 지시 패널 -->
   <div id="mcp-panel" role="dialog" aria-modal="true" aria-labelledby="mcp-panel-title" style="display:none;position:fixed;top:60px;right:16px;z-index:78;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:16px 20px;width:340px;max-height:70vh;overflow-y:auto;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -280,7 +266,7 @@
       <button class="tb-action mcp-quick" data-cmd="등록된 워크플로우 목록 보여줘" style="flex:1;padding:5px 6px;font-size:11px">📋 목록</button>
       <button class="tb-action mcp-quick" data-cmd="너는 누구야?" style="flex:1;padding:5px 6px;font-size:11px">👤 신원</button>
     </div>
-    <textarea id="mcp-input" rows="3" placeholder="MCP(Claude)에게 지시할 내용..." style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+    <textarea id="mcp-input" aria-label="MCP 지시 입력" rows="3" placeholder="MCP(Claude)에게 지시할 내용..." style="width:100%;padding:8px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
     <button id="mcp-send" class="tb-action" style="width:100%;margin-top:8px;background:var(--accent);color:#04100a;font-weight:700">📡 지시 보내기</button>
     <div style="margin-top:10px;font-size:11px;color:var(--panel-text-faint)">최근 지시/결과</div>
     <div id="mcp-log" style="font-size:11px;color:var(--panel-text);margin-top:4px"></div>
@@ -300,7 +286,7 @@
   <div id="toast-container"></div>
   <div id="ai-panel" role="dialog" aria-modal="true" aria-labelledby="ai-panel-title" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:70;background:var(--dark-2);border:1px solid var(--dark-border);border-radius:16px;padding:20px 24px;width:480px;box-shadow:0 6px 24px rgba(0,0,0,.28)">
     <h4 id="ai-panel-title" style="color:var(--accent);margin-bottom:12px">✨ AI 워크플로우 생성</h4>
-    <textarea id="ai-prompt" placeholder="예: 콘텐츠 승인 프로세스. 브리프 → 리서치 → 초안 → 검수 → 배포" style="width:100%;height:80px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:10px;font-size:13px;font-family:inherit"></textarea>
+    <textarea id="ai-prompt" aria-label="AI 프롬프트" placeholder="예: 콘텐츠 승인 프로세스. 브리프 → 리서치 → 초안 → 검수 → 배포" style="width:100%;height:80px;background:var(--dark-3);border:1px solid var(--dark-border);border-radius:8px;color:var(--panel-text);padding:10px;font-size:13px;font-family:inherit"></textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
       <button id="ai-generate" class="tb-action">생성</button>
       <button id="ai-close" class="tb-action">닫기</button>

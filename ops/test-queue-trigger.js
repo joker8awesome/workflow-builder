@@ -232,6 +232,21 @@ srv.listen(0, '127.0.0.1', async () => {
   check('exec 전에 기록을 남긴다', /queue-trigger\.log/.test(SH),
     'exec 뒤로는 코드가 돌지 않아, 앞에서 남기지 않으면 cron 기동 여부를 알 수 없다');
 
+  console.log('\n10) deploy 는 승인 게이트(guarded-deploy)를 거친다');
+  // #46 배포 때 세션이 pm2 restart 를 직접 실행해 deploy 게이트가 형식적으로 우회됐다.
+  // 이후부터 배포 목적 raw pm2 restart 는 guarded-deploy.js 안에서만 허용한다.
+  const opsFiles = fs.readdirSync(path.join(__dirname)).filter(f => /\.(js|sh)$/.test(f) && f !== 'guarded-deploy.js' && !f.startsWith('test-'));
+  const rawDeploy = [];
+  for (const f of opsFiles) {
+    const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
+    if (src.includes('pm2 restart')) rawDeploy.push(f);
+  }
+  check('배포 목적 raw pm2 restart 가 래퍼 밖에 없다', rawDeploy.length === 0,
+    'raw pm2 restart 는 승인 게이트를 우회한다: ' + rawDeploy.join(', '));
+  const GD = fs.readFileSync(path.join(__dirname, 'guarded-deploy.js'), 'utf8');
+  check('guarded-deploy 가 승인 후 배포한다', GD.includes("requiresApproval('deploy')") && GD.includes('/api/approvals'),
+    'deploy 는 승인 pending → approved 확인 후에만 git pull + pm2 restart');
+
   cleanup();
   try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {}
   srv.close();

@@ -22,6 +22,7 @@ const KNOWN_ACTIONS = [
   'rollback',           // 배포 되돌리기
   'code.change',        // 코드 수정 반영
   'agent.write',        // 에이전트 레지스트리 변경
+  'session.cleanup',    // 종료 세션 일괄 삭제 (agent_sessions 정리)
 ];
 
 // 미설정 시 기본 — 되돌리기 어렵거나 외부에 영향이 가는 것 전부
@@ -32,6 +33,7 @@ const DEFAULT_REQUIRED = [
   'credential.revoke',
   'schema.change',
   'rollback',
+  'session.cleanup',
 ];
 
 function requiredActions() {

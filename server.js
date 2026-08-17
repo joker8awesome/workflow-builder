@@ -1206,6 +1206,33 @@ app.put('/api/sessions/:id', maybeAuth('mcp:execute'), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
 });
 
+// === 에이전트 세션 정리 — 종료 세션 무한 누적 방지 ===
+// 세션은 POST /api/sessions 로 계속 쌓이는데 삭제 경로가 전혀 없었다 (grep -c 0).
+// GET 이 LIMIT 50 으로 가릴 뿐이라 DB 에는 끝없이 누적된다 (19→43→46).
+// 여기서 종료(done/failed) 상태이고 N일(기본 7일) 지난 세션만 지운다.
+// ACTIVE(running/working/waiting)와 idle 은 절대 손대지 않는다 — 진행 중 기록 소멸 방지.
+// dry_run 기본 true: 실삭제는 승인 게이트(session.cleanup)를 거쳐 dry_run:false 로만.
+app.post('/api/sessions/cleanup', maybeAuth('mcp:execute'), async (req, res) => {
+  try {
+    const days = Math.max(1, parseInt((req.body && req.body.days), 10) || 7);
+    const dryRun = !(req.body && req.body.dry_run === false);
+    if (dryRun) {
+      const { rows } = await pool.query(
+        `SELECT count(*)::int AS n FROM agent_sessions
+         WHERE status IN ('done','failed') AND created_at < now() - ($1 || ' days')::interval`, [days]);
+      return res.json({ success: true, dry_run: true, days, delete_targets: rows[0].n,
+        note: '실삭제는 승인 후 dry_run:false 로 호출' });
+    }
+    // 실삭제 — 승인 게이트 대상. audit_logs 에 남긴다.
+    const { rowCount } = await pool.query(
+      `DELETE FROM agent_sessions
+       WHERE status IN ('done','failed') AND created_at < now() - ($1 || ' days')::interval`, [days]);
+    await pool.query('INSERT INTO audit_logs (actor, resource, action, detail) VALUES ($1,$2,$3,$4)',
+      [req.agent_id || 'api', 'agent_sessions', 'cleanup', JSON.stringify({ days, deleted: rowCount })]);
+    res.json({ success: true, dry_run: false, days, deleted: rowCount });
+  } catch (e) { res.status(500).json({ success: false, error: maskedError(e) }); }
+});
+
 // === 시크릿 볼트 — 자격증명 암호화 (AES-256-CTR) ===
 const crypto2 = require('crypto');
 const VAULT_KEY = process.env.WF_VAULT_KEY || 'wf-vault-local-key-2026';
@@ -1214,13 +1241,6 @@ function encryptSecret(plain) {
   const cipher = crypto2.createCipheriv('aes-256-ctr', crypto2.createHash('sha256').update(VAULT_KEY).digest(), iv);
   const enc = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
   return iv.toString('hex') + ':' + enc.toString('hex');
-}
-function decryptSecret(data) {
-  try {
-    const [ivHex, encHex] = String(data).split(':');
-    const decipher = crypto2.createDecipheriv('aes-256-ctr', crypto2.createHash('sha256').update(VAULT_KEY).digest(), Buffer.from(ivHex, 'hex'));
-    return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
-  } catch (e) { return data; }
 }
 
 // === PII 레드액션 API — LLM 프롬프트 전 클라이언트가 호출 ===

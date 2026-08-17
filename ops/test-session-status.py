@@ -94,5 +94,12 @@ check('예외 시 failed 로 전환', "set_session_status(sess_id, \"failed\")" 
 check('run_workflow 에 finally sweep 존재',
       re.search(r'finally:\s*\n\s*#[^\n]*\n\s*#[^\n]*\n\s*reset_stale_sessions', src) is not None, '')
 
+print('\n7) 세션 정리(cleanup) 삭제 경로가 활성 상태를 제외하는가')
+m = re.search(r"DELETE FROM agent_sessions[\s\S]*?status IN \(([^)]*)\)", srv)
+check('cleanup DELETE 가 done/failed 만 대상 (활성 제외)',
+      m is not None and "'done','failed'" in m.group(1)
+      and not any(a in m.group(1) for a in orch.ACTIVE_STATUSES),
+      '대상 상태=' + (m.group(1) if m else '(DELETE 문 없음)'))
+
 print('\n' + ('전부 통과' if not fails else f'실패 {len(fails)}건: {fails}'))
 sys.exit(1 if fails else 0)

@@ -68,6 +68,17 @@ check('index.html 에 중복 id 없음', dupes.length === 0,
   'getElementById 가 첫 번째만 집는다 — 나머지는 조용히 죽는다: ' +
   dupes.map(([k, n]) => `${k}×${n}`).join(', '));
 
+// ── 2b) 한 요소에 id 속성이 둘 이상 ─────────────────────────
+// team-panel h4 에 id 가 둘(team-panel-title, team-title) 붙어 있었다.
+// 브라우저는 첫 번째만 채택하므로 getElementById('team-title') 가 null 을 반환해
+// 팀 카운트가 조용히 갱신되지 않았다. 위 2) 는 같은 id 값의 중복만 보고 이걸 놓친다.
+console.log('\n2b) 한 요소에 id 가 하나뿐인가');
+const doubleId = [...HTML.matchAll(/<[a-zA-Z][^>]*?\bid=["'][^"']*["'][^>]*?\bid=["'][^"']*["']/g)]
+  .map(m => m[0].slice(0, 70));
+check('한 태그에 id 속성이 둘 이상인 요소 없음', doubleId.length === 0,
+  '브라우저는 첫 id 만 쓴다 — 두 번째로 getElementById 하면 null 이다: ' +
+  doubleId.join(' | '));
+
 // ── 3) 스크립트 참조 ────────────────────────────────────────
 console.log('\n3) index.html 의 script 참조가 실재하는가');
 const srcRefs = [...HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]).filter(p => !/^https?:/.test(p));

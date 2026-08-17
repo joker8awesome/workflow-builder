@@ -541,7 +541,7 @@ async function loadTeamStatus() {
         (pend > 0 ? '<span style="color:var(--yellow);font-size:10px">📨 ' + pend + '</span>' : '') +
         '</div>';
     }).join('');
-    const title = document.getElementById('team-title');
+    const title = document.getElementById('team-panel-title');
     if (title) title.textContent = '🤝 에이전트 팀 (' + team.length + '명)';
   } catch (e) { list.innerHTML = panelErrorHtml('팀 현황'); }
 }

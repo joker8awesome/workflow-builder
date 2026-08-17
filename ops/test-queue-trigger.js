@@ -247,6 +247,12 @@ srv.listen(0, '127.0.0.1', async () => {
   check('guarded-deploy 가 승인 후 배포한다', GD.includes("requiresApproval('deploy')") && GD.includes('/api/approvals'),
     'deploy 는 승인 pending → approved 확인 후에만 git pull + pm2 restart');
 
+  console.log('\n11) collect-mlb 는 fb_games 에만 쓴다 (야구 픽 테이블 안 씀)');
+  const MLB = fs.readFileSync(path.join(__dirname, 'collect-mlb.py'), 'utf8');
+  check('collect-mlb 가 fb_games 에만 쓴다',
+    /fb_games/.test(MLB) && !/(?:INSERT INTO|UPDATE)\s+(?:games|odds_snapshots)\b/.test(MLB),
+    '야구 픽 games/odds_snapshots 는 건드리면 안 된다 (#49)');
+
   cleanup();
   try { fs.rmSync(DIR, { recursive: true, force: true }); } catch (e) {}
   srv.close();

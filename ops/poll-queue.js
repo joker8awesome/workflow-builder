@@ -154,7 +154,10 @@ async function main() {
       if (raw != null) {
         const obj = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch (e) { return raw; } })() : raw;
         body = typeof obj === 'object'
-          ? Object.entries(obj).map(([k, v]) => `- ${k}: ${String(v).slice(0, 400)}`).join('\n')
+          ? Object.entries(obj).map(([k, v]) => {
+              const s = (v !== null && typeof v === 'object') ? JSON.stringify(v) : String(v);
+              return `- ${k}: ${s.slice(0, 400)}`;
+            }).join('\n')
           : String(obj).slice(0, 500);
       } else {
         body = '(본문을 찾지 못했다)';
@@ -175,17 +178,43 @@ async function main() {
     log('처리할 지시는 없음 (보고만 수신)');
     return finish(0);
   }
-  tasks = actionable;
+
+  // --- 지시: spawn 전에 claim 한다 (선점 경합 방지) ---
+  // 예전엔 claim 을 세션 안에 위임했다 (프롬프트가 "list_pending → claim"을 시켰다).
+  // 그래서 두 회차가 같은 지시에 둘 다 spawn 한 뒤에야 각자 claim 을 시도했고,
+  // 선점이 안 막혀 워커가 중복 호출됐다 (#33). 보고 경로처럼 폴러가 먼저 claim 하고,
+  // 성공한 것만 세션에 넘긴다.
+  const claimedTasks = [];
+  for (const t of actionable) {
+    try {
+      const res = await callTool(key, 'agent.tasks.claim', { message_id: t.message_id });
+      if (res && res.claimed === true) {
+        claimedTasks.push(t);
+        log(`claim 성공 ${t.message_id}`);
+      } else {
+        // 이미 다른 에이전트가 선점 — 이번 회차에서 제외 (세션 띄우지 않음)
+        log(`이미 선점됨 ${t.message_id} — 이번 회차 제외`);
+      }
+    } catch (e) {
+      // 네트워크/일시 오류 — pending 으로 남아 다음 회차에서 재시도 (버리지 않음)
+      log(`claim 오류 ${t.message_id}: ${e.message} — 다음 회차 재시도`);
+    }
+  }
+  if (!claimedTasks.length) {
+    log('claim 가능한 지시가 없음 (전부 선점됨) — 세션 띄우지 않음');
+    return finish(0);
+  }
+  tasks = claimedTasks;
 
   if (RUN) {
     // 세션을 띄워 처리를 맡긴다.
-    // 지시 본문은 payload_ref 로만 오므로, 세션이 직접 해석하도록 최소 프롬프트만 준다.
-    const ids = tasks.map(t => t.message_id).join(', ');
+    // claim 은 이미 위에서 끝냈으므로, 세션은 payload_ref 로 본문만 가져오면 된다.
+    const ids = tasks.map(t => `${t.message_id} (ref=${t.payload_ref || '-'})`).join(', ');
     const prompt = [
-      '커멘드센터 큐에 나에게 온 지시가 있다.',
+      '커멘드센터 큐에 나에게 온 지시가 있다. 이미 claim 되어 있다.',
       `대기 메시지: ${ids}`,
       '',
-      'agent.tasks.list_pending 으로 내용을 확인하고, agent.tasks.claim 으로 클레임한 뒤 처리해라.',
+      'claim 은 이미 되어 있으니 다시 하지 말고 바로 처리해라.',
       'payload_ref 가 있으면 agent.payload.get 으로 본문을 가져와라.',
       '긴 지시는 저장소에 있을 수 있으니 git pull 로 최신 상태를 먼저 확인해라.',
       '',

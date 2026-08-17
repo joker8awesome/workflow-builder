@@ -186,6 +186,16 @@ srv.listen(0, '127.0.0.1', async () => {
   check('세션 중복 기동을 잠금으로 막는다',
     /poll-queue\.lock/.test(PQ) && /process\.kill\(pid, 0\)/.test(PQ),
     '폴링 간격보다 세션이 길면 같은 지시로 두 세션이 붙는다');
+  // P0-B(#42): 보고 본문 직렬화 — 중첩 객체를 String(v) 로 하면 [object Object] 가 된다.
+  check('중첩 객체 값을 렌더해도 [object Object] 가 없다',
+    /JSON\.stringify\(v\)/.test(PQ) && /typeof v === 'object'/.test(PQ),
+    'String(v) 는 중첩 객체를 [object Object] 로 만들어 구조화 필드가 유실된다');
+  // P0-A(#42): 지시 경로는 spawn 전에 claim 하고, 선점분은 세션에 넘기지 않는다.
+  const verdictAt = PQ.indexOf('claimed === true');
+  const spawnAt = PQ.indexOf("spawn('claude'");
+  check('지시는 spawn 전에 claim 하고 성공분만 넘긴다',
+    verdictAt !== -1 && spawnAt !== -1 && verdictAt < spawnAt,
+    'claim을 세션에 위임하면 두 회차가 둘 다 spawn한 뒤에야 선점 시도한다 (#33)');
 
   // 10분이었는데 배치 A·B·C 가 19분 걸려 세 번 연속 ETIMEDOUT 으로 끊겼다.
   // 재시도 정책이 증폭했다 — 죽이고 다시 띄우기를 3회 반복한 뒤 포기.

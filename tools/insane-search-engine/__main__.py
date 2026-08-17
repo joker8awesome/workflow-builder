@@ -91,7 +91,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json:
         payload = result.to_dict()
+        # CLI --json 는 프로그램 소비자(web_fetch 백엔드)가 본문+최종URL 을 한 번에
+        # 받도록 content 를 포함한다. to_dict() 의 content 생략 규약은 유지(테스트 계약).
+        payload["content"] = result.content
         print(json.dumps(payload, ensure_ascii=False, indent=2))
+        # JSON 모드: fetch 성공 여부는 payload.ok 로 판단. 종료코드는 "정상 실행"만 의미.
+        return 0
     else:
         # Default: HTML to stdout, status to stderr.
         print(result.content, end="")

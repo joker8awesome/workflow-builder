@@ -1816,6 +1816,11 @@ const FETCH_TEXT_LIMIT = 20000;   // fetch 본문 truncate (20KB)
 const FETCH_COUNT_LIMIT = 8;      // 세션당 fetch 개수 상한
 const RESEARCH_TIMEOUT_MS = 90000; // 총 타임아웃
 
+// insane-search 엔진 호출 경로 — 배치 /opt/data/engine (모듈명 `engine`), venv /opt/data/engine-venv.
+const ENGINE_PYTHON = process.env.WF_ENGINE_PYTHON || '/opt/data/engine-venv/bin/python';
+const ENGINE_CWD = process.env.WF_ENGINE_DIR || '/opt/data';
+const ENGINE_TIMEOUT_MS = 30000;   // 엔진 단일 fetch 상한 (curl grid + 폴백 없이 --no-playwright)
+
 // 리다이렉트도 매 홉 SSRF 재검사하며 따라간다. 마지막 홉의 { ok, status, text } 또는 { error }.
 async function fetchWithRedirectGuard(url, { timeoutMs = 15000, maxHops = 4 } = {}) {
   let current = url;
@@ -1849,30 +1854,43 @@ let engineAvailable = null;
 async function checkEngine() {
   if (engineAvailable !== null) return engineAvailable;
   try {
-    await execFileAsync('python3', ['-m', 'engine', '--help'], { timeout: 5000 });
+    await execFileAsync(ENGINE_PYTHON, ['-m', 'engine', '--help'], { timeout: 5000 });
     engineAvailable = true;
   } catch (e) { engineAvailable = false; }
   return engineAvailable;
 }
 
-// web_fetch 백엔드 — 2차(엔진) 우선, 1차(Jina Reader) 폴백. 둘 다 SSRF 검증 후 호출.
+// web_fetch 백엔드 — 엔진(insane-search) 우선, Jina Reader 폴백.
+// SSRF: 엔진 호출 전 validateWebUrl 로 1차 검증 + 엔진이 내부에서 리다이렉트를 따라갔을 수
+// 있으므로 반환된 최종 URL(final_url)을 재검증해 매-홉 우회를 막는다.
 async function webFetchBackend(url) {
   const v = await validateWebUrl(url);
   if (v.error) return { ok: false, error: v.error };
 
-  // 2차(강력): insane-search 엔진 — 있으면 우선, 실패 시 Jina 폴백.
+  // 엔진 우선 — curl-only(--no-playwright)로 빠르게. 본문 있으면 채택, 없으면 Jina 폴백.
   if (await checkEngine()) {
     try {
-      const { stdout } = await execFileAsync('python3', ['-m', 'engine', v.url, '--json'],
-        { timeout: 30000, maxBuffer: 20 * 1024 * 1024, encoding: 'utf8' });
-      const text = String(stdout || '').slice(0, FETCH_TEXT_LIMIT);
-      return { ok: true, text, bytes: Buffer.byteLength(text), backend: 'engine' };
+      const { stdout } = await execFileAsync(
+        ENGINE_PYTHON, ['-m', 'engine', v.url, '--json', '--no-playwright'],
+        { cwd: ENGINE_CWD, timeout: ENGINE_TIMEOUT_MS, maxBuffer: 20 * 1024 * 1024, encoding: 'utf8' }
+      );
+      const j = JSON.parse(String(stdout || '{}'));
+      // SSRF: 엔진이 리다이렉트를 따라간 최종 URL 재검증 (함정2 — 엔진 내부 리다이렉트 우회 차단).
+      if (j.final_url) {
+        const fv = await validateWebUrl(j.final_url);
+        if (fv.error) return { ok: false, error: '엔진 최종 URL SSRF 차단: ' + fv.error };
+      }
+      const text = String(j.content || '').slice(0, FETCH_TEXT_LIMIT);
+      if (text.trim()) {
+        return { ok: true, text, bytes: Buffer.byteLength(text), backend: 'engine', final_url: j.final_url };
+      }
+      console.warn('[research] engine 본문 없음, Jina 폴백');
     } catch (e) {
       console.warn('[research] engine fetch 실패, Jina 폴백:', e.message);
     }
   }
 
-  // 1차: Jina Reader (URL → 마크다운, 키 불필요)
+  // Jina Reader (URL → 마크다운, 키 불필요)
   const r = await fetchWithRedirectGuard('https://r.jina.ai/' + v.url, { timeoutMs: 30000, maxHops: 4 });
   if (r.error) return { ok: false, error: r.error };
   if (!r.ok) return { ok: false, error: 'Jina HTTP ' + r.status, status: r.status };

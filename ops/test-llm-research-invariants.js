@@ -54,6 +54,14 @@ check('fetch 본문 truncate 20KB', /FETCH_TEXT_LIMIT\s*=\s*20000/.test(body),
   '응답 본문을 자르지 않으면 메모리가 샌다');
 check('리다이렉트 매 홉 재검사 (redirect: manual)', /redirect:\s*'manual'/.test(body),
   '리다이렉트를 따라가며 재검사하지 않으면 우회된다');
+check('엔진 venv 파이썬 경로 (ENGINE_PYTHON)', /ENGINE_PYTHON/.test(body),
+  '시스템 python3(curl_cffi 미설치)로 호출하면 엔진이 조용히 실패한다');
+check('엔진 curl-only 호출 (--no-playwright)', /--no-playwright/.test(body),
+  'node/playwright 폴백이 서버 fetch 경로에서 느린 브라우저를 띄운다');
+check('엔진 JSON 본문 파싱 (j.content)', /j\.content/.test(body),
+  '엔진 --json 출력에서 본문을 안 꺼내면 메타데이터만 LLM에 간다');
+check('엔진 최종 URL SSRF 재검증 (final_url)', /validateWebUrl\(j\.final_url\)/.test(body),
+  '엔진이 내부 리다이렉트를 따라가도 최종 URL 을 재검증하지 않으면 우회된다');
 
 // --- 2) ssrf-guard — isPrivateIP 순수 판정 (네트워크 없음) ---
 console.log('\n2) isPrivateIP — 사설/공인 분류');

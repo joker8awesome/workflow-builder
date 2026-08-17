@@ -32,7 +32,7 @@ const SUITES = [
   { name: '라우트 인증 (route-auth)', file: 'ops/test-route-auth.js', runner: 'node', expect: 27 },
   { name: '스케줄러 큐 필터 (scheduler-queue)', file: 'ops/test-scheduler-queue.py', runner: 'python', expect: 12 },
   { name: 'LLM 워커 불변식 (llm-worker-invariants)', file: 'ops/test-llm-worker-invariants.js', runner: 'node', expect: 10 },
-  { name: 'LLM 리서치 불변식·SSRF (llm-research-invariants)', file: 'ops/test-llm-research-invariants.js', runner: 'node', expect: 39 },
+  { name: 'LLM 리서치 불변식·SSRF (llm-research-invariants)', file: 'ops/test-llm-research-invariants.js', runner: 'node', expect: 43 },
   { name: '큐 트리거 (queue-trigger)', file: 'ops/test-queue-trigger.js', runner: 'node', expect: 38 },
   { name: '메시지 상태 어휘 (message-status)', file: 'ops/test-message-status.js', runner: 'node', expect: 15 },
   { name: '프론트엔드 계약 (frontend-contract)', file: 'ops/test-frontend-contract.js', runner: 'node', expect: 10 },

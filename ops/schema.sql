@@ -972,3 +972,33 @@ ALTER TABLE ONLY public.wf_versions
 
 \unrestrict 4qRohJ0diQcaEJOr0R263jetaypqZEw9SbxOcIxrmycAc7gEmokOTvmr3U4oCnc
 
+
+-- ===== fb_* (formula-backtracer Phase 0) — 야구 픽 games/odds_snapshots 와 별개 =====
+-- 지시서 #49/#50. MLB 라벨 + SGO 배당 스냅샷.
+
+CREATE TABLE IF NOT EXISTS fb_games (
+  game_pk    bigint PRIMARY KEY,        -- MLB Stats API gamePk
+  game_date  date NOT NULL,
+  start_time timestamptz,
+  home_team  text NOT NULL,
+  away_team  text NOT NULL,
+  home_score int,                        -- Final 시 채움
+  away_score int,
+  status     text,
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS fb_odds_snapshots (
+  id           bigserial PRIMARY KEY,
+  game_pk      bigint REFERENCES fb_games(game_pk),
+  sgo_event_id text,
+  game_date    date,
+  home_team    text, away_team text,
+  bookmaker    text,
+  market       text,
+  side         text,
+  price        numeric,
+  collected_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_fb_odds_game_time ON fb_odds_snapshots (game_pk, collected_at);
+CREATE INDEX IF NOT EXISTS idx_fb_odds_event ON fb_odds_snapshots (sgo_event_id, collected_at);

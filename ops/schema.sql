@@ -1002,3 +1002,15 @@ CREATE TABLE IF NOT EXISTS fb_odds_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_fb_odds_game_time ON fb_odds_snapshots (game_pk, collected_at);
 CREATE INDEX IF NOT EXISTS idx_fb_odds_event ON fb_odds_snapshots (sgo_event_id, collected_at);
+
+-- 지시서 #54. 무료 과거배당(SBR GitHub 데이터셋) — 마감 moneyline 단일값.
+CREATE TABLE IF NOT EXISTS fb_odds_hist (
+  id          bigserial PRIMARY KEY,
+  game_pk     bigint REFERENCES fb_games(game_pk),  -- 조인 후 채움(NULL 허용)
+  game_date   date, home_team text, away_team text, -- 데이터셋 원문(조인용)
+  ml_home     numeric, ml_away numeric,             -- moneyline currentLine(decimal 평균)
+  source      text DEFAULT 'sbr-github',
+  ingested_at timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_fb_odds_hist_game ON fb_odds_hist (game_pk);
+

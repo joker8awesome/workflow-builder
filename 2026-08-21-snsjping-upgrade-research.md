@@ -244,7 +244,8 @@
 > | ENG-2 네이버 account_pattern 신규 신호 | ⏸ 연기 | 축 자체를 ENG-1에서 제거함(대안: 위 네이버 규칙들이 policy축 커버) |
 > | QA-2 Golden/Regression | ✅ 완료 | `tests/golden_regression.py` + 16샘플(rule-level 검증) 16/16 PASS, golden_samples seed. 커밋 `eac037a` |
 > | G05 튜닝(계정매매 false-PASS) | ✅ 완료 | `naver_account_trade` critical:true+negation_aware, 패턴 정밀화(솔리시테이션 형태). G05 PASS→**BLOCK**. 회귀 19/19 PASS(정밀도 negative N04~N06 추가). 커밋 `ede31ba` |
-> | 실행본(`_실행본/app`) 동기화 | ✅ 완료 | 1~4차 모두 반영, DB 보존, health 200 |
+> | 실사용 5회 테스트 후속 수정 | ✅ 완료 | 발견1: Fact Guard 단위숫자 보호(`protect_facts` `\b` 구멍, 2700Pa/120분/3주 미보호→수정) · 발견2: 키워드반복 REVIEW인데 Top Issues 0 → 사유 노출+안전망. 회귀 3/3. 커밋 `2589e35` |
+> | 실행본(`_실행본/app`) 동기화 | ✅ 완료 | 1~4차 + 실사용 수정 모두 반영, DB 보존, health 200 |
 
 우선순위 순. 각 항목에 근거(코드 `file:line` 또는 OFFICIAL 출처)와 축/규칙 매핑을 명시.
 

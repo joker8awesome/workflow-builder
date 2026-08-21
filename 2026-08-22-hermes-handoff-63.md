@@ -58,10 +58,27 @@ git clone --depth 1 https://github.com/joker8awesome/sns-jping.git /tmp/sns-jpin
 | B | 임계값 프로필 | `config.json` — **키 이름이 `threshold_profiles`** | **3종**: `ig-sports`·`persona-threads`·`persona-x` |
 | C | app_version | `config.json.app_version` | **`6.1.0`** |
 | D | persona 룰 스코프 | `rules.json` persona_* 4종의 `platforms` | `[threads, x]` — 다른 플랫폼에 새면 지적 |
-| E | **persona 룰 `negation_aware`** | `rules.json` persona_* 4종 | **미확인 항목.** 실제로 켜져 있는지 세고, SPEC 서술과 맞는지 대조 |
+| E | **persona 룰 `negation_aware`** | `rules.json` persona_* 4종 | **센터장이 직접 확인함 — 대조만 하라.** meetup_dm·medical_claim·false_affiliation = `true`, **`persona_suggestive`만 누락(`None`)**. SPEC이 4종 전부 negation 적용인 것처럼 서술했으면 **불일치로 지적**할 것 |
 | F | 전략 게이트 | `config.json.threshold_profiles["persona-x"].strategy.body_url_review` + engine 처리 | verdict만 PASS→REVIEW, **total·confidence·축 불변**, `type="STRATEGY"`, BLOCK 승격 금지 — SPEC §전략게이트 서술과 일치하는지 |
 | G | DB 테이블 수 | `core/database.py` | SPEC이 말하는 수와 일치? |
 | H | 회귀 골든 수 | `tests/golden_regression.py` | SPEC이 25/51 등 **옛 숫자를 남겨두었으면 지적**. 센터장 로컬 실측 = **68/68 PASS, FAIL 0** |
+
+### 3-2-1. 이미 판명난 항목 (중복 조사 금지)
+
+센터장이 로컬 정본에서 직접 확인한 결과다. **다시 조사하지 말고, SPEC.md 서술이 아래와 어긋나는지만 보라.**
+
+- **`persona_suggestive`에 `negation_aware` 누락** — 나머지 persona 룰 3종은 `true`. 실제 구멍이며 별도 수정 대상(#64 후보). SPEC이 "persona 룰은 negation 적용"으로 뭉뚱그렸으면 불일치.
+- **MD 리포트 필드** — `app.py:287` 기준 platform·verdict·total·confidence·rule_id 목록·evidence 원문·**축별 점수** 전부 포함. 누락 없음.
+- **`persona_medical_claim` ↔ 파이프라인 `crawl_sns_rss.MEDICAL_CLAIM` 드리프트 실측** — 아래 표대로 어긋나 있다. 이건 파이프라인 쪽 파일이라 **할매봇 작업 범위 밖**이니 손대지 말 것.
+
+| 갈래 | 파이프라인 필터 | 정본 룰 |
+|---|---|---|
+| 무조건 | `무조건\s?(빠\|뻐)` | `무조건\s?(?:빠\|뻐\|감량)` ← 감량 추가 |
+| 100% | `100%\s?감량` | `100\s?%\s?감량` ← % 앞 공백 허용 |
+| 부작용 | `부작용\s?없` | `부작용\s?(?:없\|제로)` ← 제로 추가 |
+| 살/지방 | `(살\|지방)\s?무조건` | `(?:살\|지방)\s?(?:무조건\|확실히)\s?(?:빠\|감)` ← 확실히 추가, 단 동사 필수 |
+
+---
 
 ### 3-3. 회귀 실행 (가능하면)
 VPS에 python·의존성이 있으면 `python -s -E tests/golden_regression.py` 실행 후 결과를 보고. **의존성 설치·pip install 금지** — 안 되면 "실행 불가(사유)"로 보고하면 된다. 센터장 로컬 기준값은 **68/68 PASS**.

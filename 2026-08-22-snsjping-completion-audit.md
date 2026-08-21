@@ -7,12 +7,12 @@
 
 ## 0-0. 후속 처리 결과 (2026-08-22, 커밋 `6f05bad`)
 
-`vending_session.md` 지침서 기준으로 작업 착수 — **P0 2건 + P1 2건 해소.** 골든 회귀 **68 → 72, 72/72 PASS, FAIL 0.**
+`vending_session.md` 지침서 기준으로 작업 착수 — **P0 2건 + P1 2건 해소.** 골든 회귀 **68 → 70, 70/70 PASS, FAIL 0.** (최종 HEAD `0a272a6`)
 
 | 감사 항목 | 결과 |
 |---|---|
 | 2-1 프로필 UI 부재 (P0) | ✅ **해소** — 관리>Accounts 에 프로필 selectbox + `UPDATE accounts`. E2E: x 계정 `default→persona-x` 시 verdict PASS→REVIEW, total 0.0 불변 |
-| 2-2 persona_suggestive negation (P0) | ✅ **해소** — `negation_aware` 추가 + negation 패턴 2건 보강 + 골든 PS5~PS8 |
+| 2-2 persona_suggestive negation (P0) | ✅ **해소** — `negation_aware` 추가(단일 규칙) + 골든 PS5·PS6. ⚠ 함께 넣었던 **전역 `negation_patterns` 2건은 `0a272a6`으로 되돌림** — negation_aware 규칙 9종이 공유하는 목록이라 E2(±1 문장 창)와 곱해져 critical BLOCK 규칙(naver_account_trade·illegal_promotion) 억제 사정권이 1/8→7/8로 확대됨. 재발 방지 적색등 추가 |
 | 2-3 배치 thresholds 미전달 (P1) | ✅ **해소** — 배치도 계정 프로필 사용. 앱 내장 Regression 은 default 사용임을 캡션 명시 |
 | 2-4 `app.py` 문구 오류 (P1) | ✅ **해소** — semantic_change 실제 동작으로 문구 정정 |
 | 2-5 SPEC.md 낡음 (P2) | ⬜ 미처리 — 지침서 범위 밖 |

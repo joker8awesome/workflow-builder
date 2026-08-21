@@ -5,6 +5,27 @@
 
 ---
 
+## 0-0. 후속 처리 결과 (2026-08-22, 커밋 `6f05bad`)
+
+`vending_session.md` 지침서 기준으로 작업 착수 — **P0 2건 + P1 2건 해소.** 골든 회귀 **68 → 72, 72/72 PASS, FAIL 0.**
+
+| 감사 항목 | 결과 |
+|---|---|
+| 2-1 프로필 UI 부재 (P0) | ✅ **해소** — 관리>Accounts 에 프로필 selectbox + `UPDATE accounts`. E2E: x 계정 `default→persona-x` 시 verdict PASS→REVIEW, total 0.0 불변 |
+| 2-2 persona_suggestive negation (P0) | ✅ **해소** — `negation_aware` 추가 + negation 패턴 2건 보강 + 골든 PS5~PS8 |
+| 2-3 배치 thresholds 미전달 (P1) | ✅ **해소** — 배치도 계정 프로필 사용. 앱 내장 Regression 은 default 사용임을 캡션 명시 |
+| 2-4 `app.py` 문구 오류 (P1) | ✅ **해소** — semantic_change 실제 동작으로 문구 정정 |
+| 2-5 SPEC.md 낡음 (P2) | ⬜ 미처리 — 지침서 범위 밖 |
+| 2-6 정책 스냅샷 소스 (P3) | ✅ **검토 완료 — 등록 안 함 결론.** `file:///` 페치는 코드 변경 없이 가능하나(실측), sources 15건이 전부 공식 정책 URL이라 근거등급이 오염되고, `x_strategy_advanced.md`의 링크 페널티는 반증완료 항목이라 전략 게이트 결정과 모순. 대안으로 `strategy_sources` 별도 채널 제안 |
+| 2-7 D2 죽은 함수 (P2) | ⬜ 미처리 — 지침서 범위 밖 |
+| 2-8 파이프라인 드리프트 (P2) | ⬜ 미처리 — `D:\로컬LLM` 소관(자판기 범위 밖), 코디네이터에 통보함 |
+
+**감사 중 추가 발견(수정 포함):** 골든 러너의 fired 판정이 `not e["negated"]` 기준이라 **`negation_aware` 누락을 구조적으로 못 잡는다**(negated는 플래그와 무관하게 계산). 실제로 persona_suggestive가 부정 문맥에서 distribution +20 / total 4.40을 가산하면서 68/68을 통과하고 있었다. 축 점수·total을 직접 보는 `persona_negation_checks()`를 신설해 persona 룰 4종을 고정했다.
+
+완료 보고: `c:\sns\vending\STATUS.md` + `c:\sns\_inbox\instagram.md`.
+
+---
+
 ## 0. 결론
 
 **계획된 기능은 전부 코드에 들어와 있고 회귀 68/68 PASS.** 그러나 **"구현은 됐는데 실사용에서 도달할 수 없는" 구멍 1건**과 **명시 요구사항을 한 칸 빼먹은 것 1건**이 있다. 나머지는 문서·일관성 문제다.

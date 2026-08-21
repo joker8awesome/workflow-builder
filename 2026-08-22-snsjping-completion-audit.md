@@ -42,7 +42,9 @@
 
 **파급:** `persona-x` **전략 게이트(`9d70d42`)도 이 프로필로만 켜진다** → 서하린 X 본문 URL REVIEW 승격이 **실사용에서 절대 발동하지 않는다.** 회귀는 `analyze(thresholds=…)`로 직접 주입해 통과하므로 이 구멍을 못 잡는다.
 
-**필요한 것:** 계정 폼/관리 탭에 `threshold_profile` selectbox + `UPDATE accounts` 1건.
+**읽기 경로는 완전히 살아 있다(확인함):** 사이드바 계정 selectbox(`app.py:356`) → `account_id`(`:357`) → `full_qa(…, account_id)`(`:450`,`:460`) → `account_thresholds()`(`:212`) → `analyze(thresholds=)`(`:213`). 계정별로 제대로 흐른다. **끊긴 곳은 쓰기 한 곳뿐.**
+
+**필요한 것:** 계정 폼/관리 탭에 `threshold_profile` selectbox + `UPDATE accounts` 1건 — 이게 수정의 전부다.
 
 ### 2-2. 🔴 `persona_suggestive` — negation 한 칸이 통째로 빠짐
 
@@ -63,6 +65,8 @@ X 오탐 | fired=['persona_suggestive'] | "속옷 화보는 금지라고 공지�
 OK     | fired=[]                     | "'무조건 빠진다' 같은 문구 금지입니다"   (medical, negation_aware=true)
 OK     | fired=[]                     | "'전속 모델' 같은 표현 하면 안 됩니다"   (false_affiliation, 동)
 ```
+
+**피해 범위(과대평가 금지):** 위 출력대로 threads에서는 세 줄 다 `verdict=PASS`다 — 이 오탐이 단독으로 판정을 뒤집지는 않는다. 실제 손해는 ① **MD 리포트에 없는 위반이 evidence 줄로 찍혀** 플랫폼 세션이 그걸 재작성 지시로 읽는 것, ② recommendation/distribution 축 가산으로 **경계선 건이 REVIEW로 넘어갈 수 있는 것** 두 가지다.
 
 **필요한 것:** `rules.json` persona_suggestive에 `negation_aware: true` + 골든 PS5(negation) 추가.
 
@@ -92,9 +96,11 @@ OK     | fired=[]                     | "'전속 모델' 같은 표현 하면 �
 
 `c:\sns\_shared\threads_algorithm_prd.html`·`x_strategy_advanced.md` 부재. 코디네이터가 문서를 배치해야 착수 가능. 자판기 쪽 결함 아님.
 
-### 2-7. 🟡 D2(규칙 신뢰도→confidence) 완전 휴면
+### 2-7. 🟠 D2(규칙 신뢰도→confidence) — 안전 배선만 있고 활성화 경로는 만들어진 적이 없음
 
-`engine.analyze(rule_reliability=)` 파라미터와 `database.rule_reliability(con)` 둘 다 있으나 **`app.py`의 analyze 호출 3곳 어디도 전달하지 않고, `rule_reliability(con)`를 호출하는 곳도 없다.** "데이터 성숙 시 활성화"는 의도된 결정이지만, **활성화 스위치도 판단 기준(몇 건 쌓이면?)도 없어** 방치되면 영영 안 켜진다.
+`engine.analyze(rule_reliability=)` 수신부와 `database.rule_reliability(con)` 생산부는 둘 다 있다. 그런데 **생산부의 호출자가 0이다** — `app.py:8`의 import 목록에 `rule_reliability`가 **아예 없고**(`connect`·`recompute_rule_stats`·`account_thresholds`만), analyze 호출 3곳 어디도 전달하지 않는다. 유일한 호출자는 회귀 테스트(`golden_regression.py:297-298`)다.
+
+즉 "데이터 성숙 시 활성화"라는 결정은 기록됐지만 **성숙을 관측할 방법도(min_samples=5를 읽는 곳이 없음), 켜는 스위치도 만들어지지 않았다.** 휴면 기능이 아니라 **호출자 없는 죽은 함수**다.
 
 ### 2-8. 🟡 파이프라인 `MEDICAL_CLAIM` 드리프트 (기보고)
 
@@ -112,4 +118,5 @@ OK     | fired=[]                     | "'전속 모델' 같은 표현 하면 �
 | P1 | 2-4 UI 문구 | 사용자에게 잘못된 정보 표시 |
 | P2 | 2-5 SPEC 갱신 | 문서 신뢰도 |
 | P2 | 2-8 파이프라인 동기화 | 수집 단계 누수 |
-| P3 | 2-6 / 2-7 | 외부 의존 / 의도된 휴면 |
+| P2 | 2-7 D2 활성화 경로 | 생산부 호출자 0 — 결정은 기록됐으나 구현 안 됨 |
+| P3 | 2-6 정책 소스 | 외부 문서 의존(자판기 결함 아님) |
